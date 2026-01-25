@@ -338,3 +338,216 @@ class TokenInpainter_Prior(nn.Module):
 
         # project ALL tokens
         return self.out_proj(X)
+
+import torch.nn as nn
+import torch.nn.functional as F
+import math
+
+
+class TokenInpainter_Blended(nn.Module):
+    """
+    Token inpainter with soft boundary blending to eliminate visible seams.
+    
+    Applies feathered blending at masked tokens near boundaries:
+    - Interior masked tokens: 100% inpainted
+    - Boundary masked tokens: smooth blend between inpainted and original
+    - Visible tokens: returned as inpainted (downstream will replace with original)
+    
+    This maintains the same input/output contract as Naive and Prior versions.
+    """
+
+    def __init__(
+        self,
+        dim=768,
+        depth=4,
+        heads=16,
+        drop=0.1,
+        use_positional_encoding=True,
+        use_final_norm=True,
+        use_local_prior=True,
+        seed_noise_std=0.01,
+        blend_border_width=3,  # Width of blending zone in patches
+        blend_kernel_size=5,   # Kernel size for distance approximation
+    ):
+        super().__init__()
+        self.blocks = nn.ModuleList(
+            [_TransformerBlk(dim, heads, drop) for _ in range(depth)]
+        )
+        self.out_proj = nn.Linear(dim, dim, bias=True)
+        self.mask_token = nn.Parameter(torch.zeros(1, 1, dim))
+        nn.init.trunc_normal_(self.mask_token, std=0.02)
+        self.mask_indicator = nn.Parameter(torch.zeros(1, 1, dim))
+        nn.init.trunc_normal_(self.mask_indicator, std=0.02)
+        self.use_positional_encoding = use_positional_encoding
+
+        self._final_norm = nn.LayerNorm(dim) if use_final_norm else None
+        self._use_local_prior = use_local_prior
+        self._seed_noise_std = seed_noise_std
+        
+        # Boundary blending parameters
+        self.blend_border_width = blend_border_width
+        self.blend_kernel_size = blend_kernel_size
+
+    def forward(self, T: torch.Tensor, pm_bool: torch.Tensor):
+        """
+        Args:
+            T: [B, N, C] - input tokens
+            pm_bool: [B, N] - boolean mask (True = masked/hole)
+            
+        Returns:
+            [B, N, C] - refined tokens at all positions
+        """
+        B, N, C = T.shape
+        device = T.device
+
+        hw = int(round(N**0.5))
+        assert hw * hw == N, "Token count N must be a perfect square"
+        H = W = hw
+
+        mask = pm_bool.unsqueeze(-1)  # [B, N, 1]
+
+        # === STEP 1: Seed masked positions ===
+        T_seed = torch.where(mask, self.mask_token.expand(B, N, C), T)
+
+        if self._use_local_prior:
+            mean_prior = _local_mean_prior(T, pm_bool, H, W, k=5)  # [B, N, C]
+            T_seed = torch.where(mask, 0.5 * T_seed + 0.5 * mean_prior, T_seed)
+
+        if self.training and self._seed_noise_std > 0:
+            noise = torch.randn_like(T_seed) * self._seed_noise_std  # [B, N, C]
+            T_seed = torch.where(mask, T_seed + noise, T_seed)
+
+        # === STEP 2: Add positionals + mask indicator ===
+        if self.use_positional_encoding:
+            pos = _build_2d_sincos_pos_embed(H, W, C, device)  # [1, N, C]
+            pos = pos.expand(B, N, C)
+            X = T_seed + pos
+        else:
+            X = T_seed
+
+        X = X + torch.where(
+            mask, self.mask_indicator.expand(B, N, C), torch.zeros_like(X)
+        )
+
+        # === STEP 3: Transformer processing ===
+        for blk in self.blocks:
+            X = blk(X)
+
+        if self._final_norm is not None:
+            X = self._final_norm(X)
+
+        X_inpainted = self.out_proj(X)  # [B, N, C]
+
+        # === STEP 4: Soft boundary blending ===
+        # Compute blend weights for masked tokens based on distance from boundary
+        blend_weights = self._compute_blend_weights(pm_bool, H, W)  # [B, N, 1]
+        
+        # Apply blending only at masked positions
+        # blend_weights: 0.0 = use original T, 1.0 = use inpainted X
+        X_blended = blend_weights * X_inpainted + (1.0 - blend_weights) * T  # [B, N, C]
+        
+        # At masked positions: use blended result
+        # At visible positions: use inpainted (downstream will replace with original T)
+        X_final = torch.where(mask, X_blended, X_inpainted)  # [B, N, C]
+        
+        return X_final
+
+    def _compute_blend_weights(
+        self, pm_bool: torch.Tensor, H: int, W: int
+    ) -> torch.Tensor:
+        """
+        Compute soft blending weights for masked tokens based on distance from boundary.
+        
+        Interior masked tokens → weight = 1.0 (use inpainted)
+        Boundary masked tokens → weight < 1.0 (blend with original)
+        Visible tokens → weight irrelevant (will use X_inpainted regardless)
+        
+        Args:
+            pm_bool: [B, N] - boolean mask (True = masked)
+            H, W: spatial dimensions
+            
+        Returns:
+            [B, N, 1] - blend weights in [0, 1]
+        """
+        B, N = pm_bool.shape
+        device = pm_bool.device
+        
+        # Reshape to spatial: [B, 1, H, W]
+        mask_spatial = pm_bool.float().reshape(B, 1, H, W)
+        
+        # Compute distance from each masked pixel to nearest boundary
+        distance = self._distance_from_boundary(mask_spatial, H, W)  # [B, 1, H, W]
+        
+        # Convert distance to blend weight using smooth transition
+        # distance = 0 (at boundary) → weight ≈ 0.0 (use original)
+        # distance ≥ blend_border_width (interior) → weight = 1.0 (use inpainted)
+        max_dist = float(self.blend_border_width)
+        
+        # Smooth sigmoid-like transition
+        # weight = smoothstep(distance / max_dist)
+        t = (distance / max_dist).clamp(0.0, 1.0)  # [B, 1, H, W]
+        weights = t * t * (3.0 - 2.0 * t)  # Smoothstep interpolation
+        
+        # Reshape back: [B, N, 1]
+        weights = weights.reshape(B, N, 1)
+        
+        return weights
+
+    def _distance_from_boundary(
+        self, mask: torch.Tensor, H: int, W: int
+    ) -> torch.Tensor:
+        """
+        Approximate distance (in patches) from each masked pixel to mask boundary.
+        Uses iterative erosion to compute distance transform.
+        
+        Args:
+            mask: [B, 1, H, W] - float mask (1.0 = masked)
+            
+        Returns:
+            [B, 1, H, W] - distance map (0 at boundary, max at interior)
+        """
+        B = mask.shape[0]
+        device = mask.device
+        
+        # Initialize distance map
+        distance = torch.zeros_like(mask)  # [B, 1, H, W]
+        current_mask = mask.clone()
+        
+        k = self.blend_kernel_size
+        pad = k // 2
+        
+        # Erosion kernel: all ones
+        kernel = torch.ones(1, 1, k, k, device=device, dtype=mask.dtype)
+        
+        max_iter = self.blend_border_width + 1
+        
+        for d in range(max_iter):
+            # Pixels in current_mask but not in eroded mask are at distance d
+            if d > 0:
+                # Erode: convolve and threshold (keep only fully surrounded pixels)
+                neighbor_sum = F.conv2d(current_mask, kernel, padding=pad)  # [B, 1, H, W]
+                eroded = (neighbor_sum >= k * k - 0.5).float()  # All neighbors must be masked
+                
+                # Pixels lost in erosion are at distance d from boundary
+                boundary_ring = (current_mask > 0.5) & (eroded < 0.5)  # [B, 1, H, W]
+                distance = torch.where(
+                    boundary_ring,
+                    torch.full_like(distance, float(d)),
+                    distance
+                )
+                
+                current_mask = eroded
+                
+                # Early exit if mask fully eroded
+                if current_mask.sum() == 0:
+                    break
+        
+        # Remaining interior pixels get maximum distance
+        interior = (current_mask > 0.5)
+        distance = torch.where(
+            interior,
+            torch.full_like(distance, float(max_iter)),
+            distance
+        )
+        
+        return distance

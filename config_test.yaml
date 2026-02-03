@@ -60,7 +60,6 @@ parameters:
 
   ### DATA                                                                      
   DATASETS:
-    value:
       SCRREAM:
         VAL_SCENES: ["scene10_full_00","scene11_full_00","scene044_full_00","scene04_reduced_00","scene04_reduced_01","scene04_reduced_02"]  # List of validation scene names
         TARGET_SIZE: [448,448]  # Target image size [height, width] in pixels

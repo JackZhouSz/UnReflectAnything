@@ -99,7 +99,7 @@ parameters:
         VAL_SCENES: ["v22","v23","v24","v25","v26","v27","v28","v29","v30","v31","v32","v33","v34"]  # Validation scene names
         TARGET_SIZE: [448,448]  # Target image size [height, width]
         RESIZE_MODE: "resize" #"resize+crop"  # Image resizing mode
-        SAMPLE_EVERY_N: 1  # Load every Nth frame
+        SAMPLE_EVERY_N: 4  # Load every Nth frame
         LOAD_RGB_ONLY: True  # Ignore polarization data if True
         FEW_IMAGES: False  # Load only first 10 images if True
         HIGHLIGHT_ENABLE: False  # Enable highlight detection/processing in dataset
@@ -281,7 +281,7 @@ parameters:
   DIFFUSE_HL_USE_CHARB:
     value: True  # Use Charbonnier loss instead of L1 for diffuse highlight penalty
   DIFFUSE_HL_PENALTY_MODE:
-    value: "luminance"  # Penalty mode: "brightness" (penalize brightness/luminance above threshold) or "pixel" (penalize RGB values directly)
+    value: "brightness"  # Penalty mode: "brightness" (penalize brightness/luminance above threshold) or "pixel" (penalize RGB values directly)
   DIFFUSE_HL_TARGET_BRIGHTNESS:
     value: null  # Target brightness/luminance for penalized pixels (null = use threshold value)
   DIFFUSE_HL_USE_LUMINANCE:

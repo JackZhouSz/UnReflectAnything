@@ -4,7 +4,7 @@ import warnings
 import dill
 import numpy as np
 import torch
-from torch_sgld import SGLD
+# from torch_sgld import SGLD
 
 from logger import get_logger
 
@@ -44,37 +44,33 @@ class Adam(torch.optim.Adam):
 
 
 # Custom implementation of SGLD optimizer, extending a base SGLD class.
-class SGLD(SGLD):
-    def __init__(self, *args, **kwargs):
-        """
-        Initializes the SGLD optimizer, setting the momentum and temperature based on kwargs.
-        Note: Inherits from a base SGLD class, not shown in the provided code.
+# class SGLD(SGLD):
+#     def __init__(self, *args, **kwargs):
+#         """
+#         Initializes the SGLD optimizer, setting the momentum and temperature based on kwargs.
+#         Note: Inherits from a base SGLD class, not shown in the provided code.
+#         """
+#         super(SGLD, self).__init__(
+#             momentum=0.9, temperature=kwargs["lr"], *args, **kwargs
+#         )
+#         self.kwargs = kwargs
+#         self.kwargs["temperature"] = kwargs[
+#             "lr"
+#         ]  # Adjust temperature to match learning rate.
+#         self.kwargs["momentum"] = 0.9  # Set momentum to a fixed value.
 
-        Args:
-            *args: Variable length argument list for the base class.
-            **kwargs: Arbitrary keyword arguments, with 'lr' used to set the temperature.
-        """
-        super(SGLD, self).__init__(
-            momentum=0.9, temperature=kwargs["lr"], *args, **kwargs
-        )
-        self.kwargs = kwargs
-        self.kwargs["temperature"] = kwargs[
-            "lr"
-        ]  # Adjust temperature to match learning rate.
-        self.kwargs["momentum"] = 0.9  # Set momentum to a fixed value.
+#     def __str__(self) -> str:
+#         """
+#         Generates a string representation of the SGLD optimizer, including its configuration.
 
-    def __str__(self) -> str:
-        """
-        Generates a string representation of the SGLD optimizer, including its configuration.
-
-        Returns:
-            str: A formatted string listing the optimizer's configuration.
-        """
-        modelstr = f"{self.__class__.__name__}(\n"
-        for k in self.kwargs.keys():
-            modelstr += f"    {k}: {self.kwargs.get(k, '')} \n"
-        modelstr += ")"
-        return modelstr
+#         Returns:
+#             str: A formatted string listing the optimizer's configuration.
+#         """
+#         modelstr = f"{self.__class__.__name__}(\n"
+#         for k in self.kwargs.keys():
+#             modelstr += f"    {k}: {self.kwargs.get(k, '')} \n"
+#         modelstr += ")"
+#         return modelstr
 
 
 # Custom implementation of SGD optimizer, extending torch.optim.SGD.

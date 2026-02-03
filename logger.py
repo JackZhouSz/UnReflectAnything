@@ -327,24 +327,25 @@ def get_logger(module_name, log_to_file=True, relative_log_dir="$RESULTS_DIR/tmp
     Args:
         module_name (str): Name of the module
         log_to_file (bool): Whether to log to a file in addition to console
-        relative_log_dir (str, optional): Directory for log files if log_to_file is True
+        relative_log_dir (str, optional): Directory for log files if log_to_file is True; may contain environment-style $VARS
 
     Returns:
         CustomLogger: The logger instance
     """
+    # Expand any $VARS in relative_log_dir to their environment values
     log_dir = os.path.expandvars(relative_log_dir)
+
     if module_name in _loggers:
         return _loggers[module_name]
 
     log_file = None
     if log_to_file:
-        # logs_dir = os.path.expandvars("logs")
-        # Ensure log directory exists
+        # Ensure log directory exists (after expansion)
         os.makedirs(log_dir, exist_ok=True)
 
         log_file = os.path.join(log_dir, f"{module_name.split('.')[-1]}.log")
 
-        # Remove existing log file if it exists
+        # Remove existing log file if it exists, to start fresh
         if os.path.exists(log_file):
             os.remove(log_file)
 

@@ -320,7 +320,7 @@ class CustomLogger:
 _loggers = {}
 
 
-def get_logger(module_name, log_to_file=True, relative_log_dir="$RESULTS_DIR/tmp/"):
+def get_logger(module_name, log_to_file=True, relative_log_dir=""):
     """
     Get or create a logger for the specified module.
 
@@ -333,6 +333,10 @@ def get_logger(module_name, log_to_file=True, relative_log_dir="$RESULTS_DIR/tmp
         CustomLogger: The logger instance
     """
     # Expand any $VARS in relative_log_dir to their environment values
+    if relative_log_dir is None:
+        relative_log_dir = os.path.join(os.environ.get("RESULTS_DIR", "."), "tmp")
+    elif relative_log_dir == "":
+        relative_log_dir = os.path.join(os.environ.get("RESULTS_DIR", "."), "tmp")
     log_dir = os.path.expandvars(relative_log_dir)
 
     if module_name in _loggers:

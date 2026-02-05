@@ -489,13 +489,28 @@ def parse_cli() -> InferenceOptions:
     def _as_path(value: Optional[str]) -> Optional[Path]:
         return None if value is None else Path(value).expanduser().resolve()
 
-    weights_path = _as_path(raw_options.get("weights_path"))
+    raw_weights = raw_options.get("weights_path")
+    weights_path = _as_path(raw_weights)
+    # Default to cache dir (same as download-weights) when omitted or set to "default"
+    if weights_path is None or (isinstance(raw_weights, str) and str(raw_weights).strip().lower() == "default"):
+        try:
+            from unreflectanything.weights import DEFAULT_WEIGHTS_FILENAME, get_weights_cache_dir
+            weights_path = get_weights_cache_dir() / DEFAULT_WEIGHTS_FILENAME
+        except ImportError:
+            weights_path = None
     input_dir = _as_path(raw_options.get("input_dir"))
     output_dir = _as_path(raw_options.get("output_dir"))
 
     if weights_path is None or not weights_path.exists():
+        cache_dir = None
+        try:
+            from unreflectanything.weights import get_weights_cache_dir
+            cache_dir = get_weights_cache_dir()
+        except ImportError:
+            pass
+        hint = f" Run 'unreflectanything download-weights' first, or set weights_path in the config." if cache_dir else ""
         raise FileNotFoundError(
-            "weights_path must point to an existing checkpoint file"
+            f"weights_path must point to an existing checkpoint file.{hint}"
         )
     if input_dir is None or not input_dir.exists():
         raise FileNotFoundError("input_dir must point to an existing directory")
@@ -772,6 +787,47 @@ def compute_highlight_mask(rgb_batch: Tensor, threshold: float = 0.7) -> Tensor:
     brightness = rgb_batch.mean(dim=1, keepdim=True)/rgb_batch.mean(dim=1, keepdim=True).max()  # [B,1,H,W]
     mask = (brightness > threshold).to(rgb_batch.dtype)
     return mask
+
+
+def run_model(
+    model: torch.nn.Module,
+    rgb_batch: Tensor,
+    inpaint_mask_dilation: int = 11,
+) -> Tensor:
+    """Run minimal-overhead model forward pass on a batch of RGB images.
+
+    This is the core inference function optimized for speed. It performs only
+    the essential model forward pass without any file I/O, monitoring, or
+    progress reporting.
+
+    Args:
+        model: The loaded UnReflectAnything model in eval mode.
+        rgb_batch: Input RGB tensor of shape [B, 3, H, W] with values in [0, 1].
+            The spatial dimensions should match the model's expected input size
+            (typically 448x448).
+        inpaint_mask_dilation: Dilation kernel size for the inpainting mask.
+            Defaults to 11.
+
+    Returns:
+        Diffuse output tensor of shape [B, 3, H, W] with values in [0, 1].
+
+    Example:
+        >>> model = load_model(options, device)
+        >>> rgb = torch.rand(4, 3, 448, 448, device='cuda')  # [B, C, H, W]
+        >>> diffuse = run_model(model, rgb)  # [B, 3, H, W]
+    """
+    model.eval()
+    with torch.no_grad():
+        outputs = model({
+            "rgb": rgb_batch,
+            "inpaint_mask_dilation": inpaint_mask_dilation,
+        })
+    
+    diffuse = outputs.get("diffuse")
+    if diffuse is None:
+        raise KeyError("Model output does not contain 'diffuse'")
+    
+    return diffuse.clamp(0.0, 1.0)
 
 
 def save_diffuse_batch(

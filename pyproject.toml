@@ -76,6 +76,7 @@ py-modules = [
   "ablate",
   "ablate_agent",
   "engine",
+  "evaluate",
   "geometry",
   "inference",
   "logger",
@@ -113,6 +114,7 @@ namespaces = true
 "unreflectanything" = [
   "data/*.bash",
   "data/*.zsh",
+  "data/*.txt",
 ]
 
 

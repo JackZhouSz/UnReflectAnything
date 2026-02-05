@@ -1,16 +1,39 @@
 """UnReflectAnything: deep learning method for removing specular reflections from RGB images.
 
-Public API:
+Public API (recommended):
+    inference: Run inference on images to remove reflections.
+    train: Train the model.
+    test: Test/evaluate a trained model.
+    download: Download weights, images, or notebooks.
+    evaluate: Compute evaluation metrics.
+    verify_dataset: Verify dataset structure.
+    cite: Get citation in various formats.
+
+Legacy API (still supported):
     run_pipeline: Train or test the network (main entry for training/testing).
     run_inference: Run inference on an image directory from InferenceOptions.
     InferenceOptions: Dataclass for inference configuration.
     compute_highlight_mask: Compute binary highlight masks from RGB batch.
     get_weights_cache_dir: Default cache directory for downloaded weights.
+
+Example:
+    >>> from unreflectanything import inference, evaluate
+    >>> inference("input.png", output="output.png")
+    >>> results = evaluate("output.png", "reference.png")
 """
 
 from __future__ import annotations
 
 __all__ = [
+    # New API (recommended)
+    "inference",
+    "train",
+    "test",
+    "download",
+    "evaluate",
+    "verify_dataset",
+    "cite",
+    # Legacy API (still supported)
     "run_pipeline",
     "run_inference",
     "InferenceOptions",
@@ -21,6 +44,30 @@ __all__ = [
 
 def __getattr__(name: str):
     """Lazy imports so that `import unreflectanything` and CLI --help stay fast."""
+    # New API functions
+    if name == "inference":
+        from unreflectanything.api import inference
+        return inference
+    if name == "train":
+        from unreflectanything.api import train
+        return train
+    if name == "test":
+        from unreflectanything.api import test
+        return test
+    if name == "download":
+        from unreflectanything.api import download
+        return download
+    if name == "evaluate":
+        from unreflectanything.api import evaluate
+        return evaluate
+    if name == "verify_dataset":
+        from unreflectanything.api import verify_dataset
+        return verify_dataset
+    if name == "cite":
+        from unreflectanything.api import cite
+        return cite
+
+    # Legacy API
     if name == "run_pipeline":
         import main as _main
         return _main.run_pipeline
@@ -36,4 +83,5 @@ def __getattr__(name: str):
     if name == "get_weights_cache_dir":
         from unreflectanything.weights import get_weights_cache_dir
         return get_weights_cache_dir
+
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

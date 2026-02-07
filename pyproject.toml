@@ -4,10 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "unreflectanything"
-version = "0.1.4"
+version = "0.1.6"
 description = "Deep learning method for removing specular reflections from RGB images."
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.11"
 authors = [
   {name = "Alberto Rota"},
   {name = "Mert Kiray"},
@@ -28,6 +28,7 @@ classifiers = [
   "Programming Language :: Python",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
@@ -53,7 +54,7 @@ dependencies = [
   "lovely-tensors==0.1.21",
   "lpips==0.1.4",
   "matplotlib==3.10.8",
-  "moge",
+  "moge @ git+https://github.com/microsoft/MoGe.git",
   "natsort==8.4.0",
   "pandas==3.0.0",
   "paramiko==4.0.0",
@@ -84,7 +85,6 @@ publish-url = "https://test.pypi.org/legacy/"
 explicit = true
 
 [tool.uv.sources]
-moge = { git = "https://github.com/microsoft/MoGe.git" }
 transformers = { git = "https://github.com/huggingface/transformers", rev = "2fe43376cdde02b7ffcf117e6eb9aa4375fb2dd1" }
 
 [tool.setuptools]

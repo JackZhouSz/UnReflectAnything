@@ -1658,9 +1658,9 @@ class UnReflect_Model(nn.Module):
                     for param in decoder.parameters():
                         param.requires_grad = False
                     decoder.eval()  
-                    # logger.info(
-                    #     f"Decoder '{decoder_name}' frozen due to DECODER_LR=0.0"
-                    # )
+                    logger.info(
+                        f"Decoder '{decoder_name}' frozen due to DECODER_LR=0.0"
+                    )
                 else:
                     # Apply selective freezing if parameters are specified
                     if num_fusion_blocks_trainable is not None or train_rgb_head is not None:
@@ -1739,9 +1739,9 @@ class UnReflect_Model(nn.Module):
                                     param.requires_grad = True
                         
                         decoder.train()
-                        # logger.info(
-                        #     f"Decoder '{decoder_name}' selectively frozen/unfrozen"
-                        # )
+                        logger.info(
+                            f"Decoder '{decoder_name}' selectively frozen/unfrozen"
+                        )
                     else:
                         # No selective freezing specified, train everything
                         for param in decoder.parameters():

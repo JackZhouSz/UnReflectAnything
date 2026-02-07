@@ -70,7 +70,7 @@ def _run_inference(args: argparse.Namespace) -> None:
     """Run inference - calls api.inference()."""
     from unreflectanything.api import inference
 
-    # Determine output path
+    # Determine output paths
     output = args.output
     if output is None:
         output = Path("./output")
@@ -385,7 +385,7 @@ def main() -> None:
         "-d", "--device",
         type=str,
         default="cuda",
-        help="Device to run on: cuda or cpu (default: cuda)",
+        help="CUDA device (e.g. cuda, cuda:0, cuda:1) or cpu (default: cuda)",
     )
     p_inf.add_argument(
         "-b", "--batch-size",

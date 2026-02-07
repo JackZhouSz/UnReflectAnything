@@ -65,8 +65,10 @@ def inference(
             - Path to a YAML config file
             - Dictionary with config overrides
             If None, uses default config_inference.yaml settings.
-        device: Device to run inference on ('cuda' or 'cpu').
-        batch_size: Number of images to process per forward pass.
+        device: Device to run inference on. Use ``'cuda'`` (or ``'cuda:0'`` when
+            multiple GPUs exist), ``'cuda:0'``, ``'cuda:1'``, etc., or ``'cpu'``.
+            Default ``'cuda'`` uses the single GPU when only one is available.
+        batch_size: Number of images to process per forward pass (default: 4).
         brightness_threshold: Threshold for highlight mask computation (0.0-1.0).
             Pixels with brightness above this value are considered highlights.
         resize_output: If True, resize output images to match original input
@@ -161,7 +163,7 @@ def inference(
                 weights_path=resolved_weights,
                 input_dir=input_path if input_path.is_dir() else input_path.parent,
                 output_dir=output_path if output_path.is_dir() else output_path.parent,
-                device=device,
+                device=_resolve_device(device),
                 batch_size=batch_size,
                 brightness_threshold=brightness_threshold,
                 resize_output=resize_output,
@@ -174,6 +176,21 @@ def inference(
 
             _run_inference_files(options)
             return None
+
+
+def _resolve_device(device: str) -> str:
+    """Resolve device string for inference: use CUDA when available, else CPU.
+
+    When device is 'cuda' and exactly one GPU is available, returns 'cuda'.
+    When device is 'cuda' and multiple GPUs exist, returns 'cuda:0'.
+    Otherwise returns the given device string (e.g. 'cuda:1', 'cpu').
+    """
+    import torch
+    if not torch.cuda.is_available():
+        return "cpu"
+    if device == "cuda":
+        return "cuda:0" if torch.cuda.device_count() > 1 else "cuda"
+    return device
 
 
 def _inference_tensor(
@@ -237,7 +254,7 @@ def _inference_tensor(
         options = _apply_config_to_options(options, config)
 
     # Load model
-    torch_device = torch.device(device if torch.cuda.is_available() else "cpu")
+    torch_device = torch.device(_resolve_device(device))
     model = load_model(options, torch_device)
 
     # Move input to device
@@ -313,7 +330,7 @@ def _inference_files_return_tensors(
     if config is not None:
         options = _apply_config_to_options(options, config)
 
-    torch_device = torch.device(device if torch.cuda.is_available() else "cpu")
+    torch_device = torch.device(_resolve_device(device))
     model = load_model(options, torch_device)
     target_side = model.dinov3.config["image_size"]
     target_size = (target_side, target_side)

@@ -51,36 +51,36 @@ __all__ = [
 
 def __getattr__(name: str):
     """Lazy imports so that `import unreflectanything` and CLI --help stay fast."""
-    # New API functions
+    # New API functions (one module per subcommand)
     if name == "inference":
-        from unreflectanything.api import inference
+        from unreflectanything.inference_ import inference
         return inference
     if name == "model":
-        from unreflectanything.api import model
+        from unreflectanything.model_ import model
         return model
     if name == "UnReflectModel":
-        from unreflectanything.api import UnReflectModel
+        from unreflectanything.model_ import UnReflectModel
         return UnReflectModel
     if name == "train":
-        from unreflectanything.api import train
+        from unreflectanything.train_ import train
         return train
     if name == "test":
-        from unreflectanything.api import test
+        from unreflectanything.test_ import test
         return test
     if name == "download":
-        from unreflectanything.api import download
+        from unreflectanything.download_ import download
         return download
     if name == "evaluate":
-        from unreflectanything.api import evaluate
+        from unreflectanything.evaluate_ import evaluate
         return evaluate
     if name == "verify":
-        from unreflectanything.api import verify
+        from unreflectanything.verify_ import verify
         return verify
     if name == "verify_dataset":
-        from unreflectanything.api import verify_dataset
+        from unreflectanything.verify_ import verify_dataset
         return verify_dataset
     if name == "cite":
-        from unreflectanything.api import cite
+        from unreflectanything.cite_ import cite
         return cite
 
     # Legacy API
@@ -97,13 +97,13 @@ def __getattr__(name: str):
         from inference import run_inference
         return run_inference
     if name == "get_cache_dir":
-        from unreflectanything.weights import get_cache_dir
+        from unreflectanything._shared import get_cache_dir
         return get_cache_dir
     if name == "ImageDirDataset":
-        from unreflectanything.api import ImageDirDataset
+        from unreflectanything.dataset_ import ImageDirDataset
         return ImageDirDataset
     if name == "DEFAULT_IMAGE_EXTENSIONS":
-        from unreflectanything.api import DEFAULT_IMAGE_EXTENSIONS
+        from unreflectanything._shared import DEFAULT_IMAGE_EXTENSIONS
         return DEFAULT_IMAGE_EXTENSIONS
 
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

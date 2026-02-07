@@ -17,7 +17,7 @@ import warnings
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, List, Optional, Sequence, Tuple
+from typing import TYPE_CHECKING, Any, List, Optional, Sequence, Tuple, Union
 
 if TYPE_CHECKING:
     import torch
@@ -480,7 +480,7 @@ def parse_cli() -> InferenceOptions:
     # Default to cache dir (same as download-weights) when omitted or set to "default"
     if weights_path is None or (isinstance(raw_weights, str) and str(raw_weights).strip().lower() == "default"):
         try:
-            from unreflectanything.weights import DEFAULT_WEIGHTS_FILENAME, get_cache_dir
+            from unreflectanything._shared import DEFAULT_WEIGHTS_FILENAME, get_cache_dir
             weights_path = get_cache_dir("weights") / DEFAULT_WEIGHTS_FILENAME
         except ImportError:
             weights_path = None
@@ -490,7 +490,7 @@ def parse_cli() -> InferenceOptions:
     if weights_path is None or not weights_path.exists():
         cache_dir = None
         try:
-            from unreflectanything.weights import get_cache_dir
+            from unreflectanything._shared import get_cache_dir
             cache_dir = get_cache_dir("weights")
         except ImportError:
             pass
@@ -618,63 +618,119 @@ def _load_config_from_yaml(options: InferenceOptions):
     return load_and_process_config(config_path=str(options.model_config_path))
 
 
-def load_model(
-    options: InferenceOptions,
-    device: "torch.device",
+def _load_config_from_path_or_dict(config_path_or_dict):
+    """Load DotMap config from a YAML path, a dict, or an existing DotMap."""
+    from pathlib import Path
+    from dotmap import DotMap
+    from main import load_and_process_config
+
+    if config_path_or_dict is None:
+        return None
+    if isinstance(config_path_or_dict, DotMap):
+        config_path_or_dict.USE_TORCH_COMPILE = False
+        return config_path_or_dict
+    if isinstance(config_path_or_dict, dict):
+        cfg = DotMap(config_path_or_dict)
+        cfg.USE_TORCH_COMPILE = False
+        return cfg
+    path = Path(config_path_or_dict).expanduser().resolve()
+    if not path.exists():
+        return None
+    return load_and_process_config(config_path=str(path))
+
+
+def load_pretrained(
+    weights_path: Path,
+    config_path: Optional[Union[Path, str, dict, Any]] = None,
+    device: str = "cuda",
     strict: bool = False,
     verbose: bool = False,
-) -> "UnReflect_Model_TokenInpainter":
-    """Build the model architecture and load checkpoint weights.
+    default_config_path=None,
+    run: Optional[str] = None,
+    runs_dir: Optional[Path] = None,
+    model_module: Optional[str] = None,
+) -> "torch.nn.Module":
+    """Build the model architecture and load checkpoint weights (single entry point for inference).
+
+    Resolves configuration in order: checkpoint, run directory (if run/runs_dir set),
+    config argument (path or dict), default_config_path. Then builds the model with
+    create_model_from_config, loads state_dict, and returns the model in eval mode.
 
     Args:
-        options: Inference options containing weights_path and optional config sources.
-        device: Target device for the model.
-        strict: If True, load_state_dict uses strict=True; missing or unexpected
-            keys will raise RuntimeError. If False, mismatches are reported as warnings.
+        weights_path: Path to the checkpoint file (e.g. full_model_weights.pt).
+        config: Optional config source: path to YAML or dict. Used if checkpoint has no config.
+        device: Device string (e.g. "cuda", "cpu").
+        strict: If True, load_state_dict uses strict=True.
         verbose: If True, print progress information.
+        default_config_path: Optional path to default config when no other source is available.
+        run: Optional run identifier for loading config from experiment directory.
+        runs_dir: Optional base directory for runs (used with run).
+        model_module: Optional override for config.MODEL.MODEL_MODULE.
 
     Returns:
-        Loaded model in eval mode.
+        Loaded model in eval mode (e.g. UnReflect_Model_TokenInpainter).
     """
     import torch
     from main import create_model_from_config
+    from dotmap import DotMap
+    from utilities.run_resume import get_resume_info
+
+    weights_path = Path(weights_path).expanduser().resolve()
+    if not weights_path.exists():
+        raise FileNotFoundError(f"Weights not found at {weights_path}")
+
     if verbose:
-        print(
-            f"Loading checkpoint from '{options.weights_path}' on device '{device}'"
-        )
+        print(f"Loading checkpoint from '{weights_path}' on device '{device}'")
     checkpoint = torch.load(
-        options.weights_path, map_location="cpu", weights_only=False
+        weights_path, map_location="cpu", weights_only=False
     )
 
-    # Try to reconstruct configuration, reporting chosen strategy for logging
-    config = _load_config_from_checkpoint(checkpoint)
-    config_source = None
-    if config is not None:
-        config_source = f"checkpoint '{options.weights_path}'"
+    if config_path is None:
+        config = _load_config_from_checkpoint(checkpoint)
+    elif isinstance(config_path, (DotMap, dict)):
+        config = _load_config_from_path_or_dict(config_path)
     else:
-        config = _load_config_from_run(options)
-        if config is not None:
-            config_source = (
-                f"run directory '{options.runs_dir}/{options.run}'"
-            )
+        path = Path(config_path).expanduser().resolve()
+        if path.exists():
+            config = _load_config_from_path_or_dict(path)
         else:
-            config = _load_config_from_yaml(options)
-            if config is not None:
-                config_source = f"YAML file '{options.model_config_path}'"
+            config = _load_config_from_checkpoint(checkpoint)
+        
+    # # If config is not none 
+    # config_source = None
+    # if config is not None:
+    #     config_source = f"checkpoint '{weights_path}'"
+    # else:
+    #     if run is not None and runs_dir is not None:
+    #         resume_info = get_resume_info(run, str(runs_dir))
+    #         if resume_info is not None:
+    #             run_config = resume_info.get("config")
+    #             if run_config is not None:
+    #                 config = DotMap(run_config) if not isinstance(run_config, DotMap) else run_config
+    #                 config.USE_TORCH_COMPILE = False
+    #                 config_source = f"run directory '{runs_dir}/{run}'"
+    #     if config is None:
+    #         config = _load_config_from_path_or_dict(config)
+    #         if config is not None:
+    #             config_source = "config argument"
+    #     if config is None and default_config_path is not None:
+    #         config = _load_config_from_path_or_dict(default_config_path)
+    #         if config is not None:
+    #             config_source = f"default config '{default_config_path}'"
+    # if config is None:
+    #     raise RuntimeError(
+    #         "Unable to reconstruct model configuration. Provide config (path or dict), "
+    #         "default_config_path, or ensure the checkpoint/run stores a serialised config."
+    #   )
+    if config_path is not None and verbose:
+        print(f"Model configuration loaded from {config_path}")
 
-    if config is None:
-        raise RuntimeError(
-            "Unable to reconstruct model configuration. Provide model_config_path"
-            " or ensure the checkpoint/run stores a serialised config."
-        )
-    if config_source is not None and verbose:
-        print(f"Model configuration loaded from {config_source}")
-
-    if options.model_module is not None:
-        config.MODEL.MODEL_MODULE = options.model_module
+    if model_module is not None:
+        config.MODEL.MODEL_MODULE = model_module
     config.USE_TORCH_COMPILE = False
 
-    model = create_model_from_config(config, device,verbose=verbose)
+    torch_device = torch.device(device)
+    model = create_model_from_config(config, torch_device, verbose=verbose)
     state_dict = checkpoint.get("model_state_dict")
     if state_dict is None:
         raise KeyError("Checkpoint does not contain model_state_dict")
@@ -689,6 +745,39 @@ def load_model(
     if verbose:
         print("✔️  Model loaded and ready for inference")
     return model
+
+
+def load_model(
+    options: InferenceOptions,
+    device: "torch.device",
+    strict: bool = False,
+    verbose: bool = False,
+) -> "UnReflect_Model_TokenInpainter":
+    """Build the model architecture and load checkpoint weights.
+
+    Thin wrapper around load_pretrained: builds arguments from InferenceOptions.
+
+    Args:
+        options: Inference options containing weights_path and optional config sources.
+        device: Target device for the model.
+        strict: If True, load_state_dict uses strict=True; missing or unexpected
+            keys will raise RuntimeError. If False, mismatches are reported as warnings.
+        verbose: If True, print progress information.
+
+    Returns:
+        Loaded model in eval mode.
+    """
+    return load_pretrained(
+        weights_path=options.weights_path,
+        config_path=options.model_config_path,
+        device=str(device),
+        strict=strict,
+        verbose=verbose,
+        default_config_path=None,
+        run=options.run,
+        runs_dir=options.runs_dir,
+        model_module=options.model_module,
+    )
 
 
 def list_image_paths(root: Path, extensions: Sequence[str]) -> List[Path]:

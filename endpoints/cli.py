@@ -67,8 +67,8 @@ def _print_subcommand_startup_message(subcommand: str | None) -> None:
 # =============================================================================
 
 def _run_inference(args: argparse.Namespace) -> None:
-    """Run inference - calls api.inference()."""
-    from unreflectanything.api import inference
+    """Run inference - calls inference_.inference()."""
+    from unreflectanything.inference_ import inference
 
     # Determine output paths
     output = args.output
@@ -89,8 +89,8 @@ def _run_inference(args: argparse.Namespace) -> None:
 
 
 def _run_train(args: argparse.Namespace) -> None:
-    """Run training - calls api.train()."""
-    from unreflectanything.api import train
+    """Run training - calls train_.train()."""
+    from unreflectanything.train_ import train
 
     # Parse passthrough arguments into overrides dict
     overrides = {}
@@ -136,8 +136,8 @@ def _run_train(args: argparse.Namespace) -> None:
 
 
 def _run_test(args: argparse.Namespace) -> None:
-    """Run testing - calls api.test()."""
-    from unreflectanything.api import test
+    """Run testing - calls test_.test()."""
+    from unreflectanything.test_ import test
 
     # Parse passthrough arguments into overrides dict
     overrides = {}
@@ -167,8 +167,8 @@ def _run_test(args: argparse.Namespace) -> None:
 
 
 def _run_download(args: argparse.Namespace) -> None:
-    """Download assets - calls api.download()."""
-    from unreflectanything.api import download
+    """Download assets - calls download_.download()."""
+    from unreflectanything.download_ import download
 
     # Determine what to download
     if args.all:
@@ -194,8 +194,8 @@ def _run_download(args: argparse.Namespace) -> None:
 
 
 def _run_download_weights(args: argparse.Namespace) -> None:
-    """Download weights (legacy command) - calls api.download()."""
-    from unreflectanything.api import download
+    """Download weights (legacy command) - calls download_.download()."""
+    from unreflectanything.download_ import download
 
     download(
         what="weights",
@@ -207,9 +207,7 @@ def _run_download_weights(args: argparse.Namespace) -> None:
 
 def _run_cache_dir(args: argparse.Namespace) -> None:
     """Print the cache directory (base or a specific asset subdir)."""
-    from unreflectanything.weights import (
-        get_cache_dir
-    )
+    from unreflectanything._shared import get_cache_dir
     if args.weights:
         path = get_cache_dir("weights")
     elif args.images:
@@ -224,8 +222,8 @@ def _run_cache_dir(args: argparse.Namespace) -> None:
 
 
 def _run_verify(args: argparse.Namespace) -> None:
-    """Verify dataset or weights - calls api.verify()."""
-    from unreflectanything.api import verify
+    """Verify dataset or weights - calls verify_.verify()."""
+    from unreflectanything.verify_ import verify
 
     if args.dataset:
         what = "dataset"
@@ -251,8 +249,8 @@ def _run_verify(args: argparse.Namespace) -> None:
 
 
 def _run_evaluate(args: argparse.Namespace) -> None:
-    """Evaluate model outputs - calls api.evaluate()."""
-    from unreflectanything.api import evaluate
+    """Evaluate model outputs - calls evaluate_.evaluate()."""
+    from unreflectanything.evaluate_ import evaluate
     import json as json_module
 
     # Parse metrics
@@ -286,8 +284,8 @@ def _run_evaluate(args: argparse.Namespace) -> None:
 
 
 def _run_cite(args: argparse.Namespace) -> None:
-    """Print citation - calls api.cite()."""
-    from unreflectanything.api import cite
+    """Print citation - calls cite_.cite()."""
+    from unreflectanything.cite_ import cite
 
     # Determine format
     if args.apa:

@@ -74,28 +74,31 @@ Refer to the [Wiki](https://github.com/alberto-rota/UnReflectAnything/wiki) to g
 The same endpoints above are exposed as a Python API. Refer to the [Wiki](https://github.com/alberto-rota/UnReflectAnything/wiki) to get detailed documentation about each endpoint. A few examples are reported below
 
 ```python
-import unreflectanything
-from unreflectanything import UnReflectModel
+import unreflectanything as ura
 import torch
 
-img = torch.from_numpy(np.array(PIL.Image.open("path/to/image.jpg")))
+# Get the model class (e.g. for custom setup or training)
+ModelClass = ura.model()
 
-# Instantiate and call the model
-unreflect = UnReflectModel()
-unreflected_img = unreflect(img)
+# Get a pretrained model (torch.nn.Module) and run on batched RGB
+uramodel = ura.model(pretrained=True)  # uses cached weights; run 'ura download --weights' first
+images = torch.rand(2, 3, 448, 448, device="cuda")  # [B, 3, H, W], values in [0, 1]
+model_out = uramodel(images)  # [B, 3, H, W] diffuse tensor
+
+# File-based or tensor-based inference (one-shot, no model handle)
+ura.inference("input.png", output="output.png")
+result = ura.inference(images)  # tensor input returns tensor
 
 # Run training or testing
-unreflectanything.run_pipeline(mode="train")   # or mode="test"
-unreflectanything.run_pipeline(mode="test")   
+ura.run_pipeline(mode="train")   # or mode="test"
 
 # Run inference from options
-options = unreflectanything.InferenceOptions(
+options = ura.InferenceOptions(
     weights_path="path/to/full_model_weights.pt",
     input_dir="path/to/input/images",
     output_dir="path/to/output/diffuse",
 )
-unreflectanything.inference(options)
-
+ura.run_inference(options)
 ```
 
 ## Citation

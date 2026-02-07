@@ -5,7 +5,7 @@ parameters:
   ### MODEL ARCHITECTURE                                                       
   MODEL:
     value:
-      MODEL_CLASS: "UnReflect_Model"  # Main model class name (must match class in models.py)
+      MODEL_CLASS: "UnReflect_Model"  # Main model class name (must match class in models.py)  # <<<<<<<<< DECODER PRETRAINING: NOT USING TOKEN INPAINTER (DIRECT FROM DINO)
       MODEL_MODULE: "models"  # Module name to import model classes from (default: "models")
       RGB_ENCODER:
         ENCODER: "facebook/dinov3-vitl16-pretrain-lvd1689m"  # DINOv3 encoder model name (HuggingFace format)
@@ -19,7 +19,7 @@ parameters:
           REASSEMBLE_OUT_CHANNELS: [768,1024,1536,2048]  # Output channels for each decoder stage (DPT-style reassembly)
           REASSEMBLE_FACTORS: [4.0, 2.0, 1.0, 0.5]  # Spatial upsampling factors for each stage
           READOUT_TYPE: "ignore"  # Readout type for DPT decoder ("ignore", "project", etc.)
-          # FROM_PRETRAINED: "weights/rgb_decoder.pth"  # Path to pretrained decoder weights (optional)
+          # FROM_PRETRAINED: "weights/rgb_decoder.pth"  # Path to pretrained decoder weights (optional)    # <<<<<<<<< DECODER PRETRAINING: NO WEIGHTS HERE
           USE_BN: False  # Use batch normalization in decoder
           DROPOUT: 0.1  # Dropout rate in decoder layers
           OUTPUT_IMAGE_SIZE: [896,896]  # Output image resolution [height, width]
@@ -133,8 +133,8 @@ parameters:
       #   SAMPLE_EVERY_N: 1
       #   LOAD_RGB_ONLY: True
 
-  BATCH_SIZE: # Max batch size with img size 896 is 32
-    value: 14  # Number of samples per batch (adjust based on GPU memory)
+  BATCH_SIZE: # Max batch size with img size 896x896 is 20
+    value: 20  # Number of samples per batch (adjust based on GPU memory)
   NUM_WORKERS:
     value: 12  # Number of data loading worker processes (0 = main process only)
   SHUFFLE:  

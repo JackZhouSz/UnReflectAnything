@@ -13,7 +13,7 @@ UnReflectAnything inputs any RGB image and removes specular highlights, returnin
 UnReflectAnything works on both natural indoor and surgical/endoscopic domain data. 
 
 ---
-![examples](https://github.com/alberto-rota/UnReflectAnything/blob/main/assets/header.png)
+![examples](https://raw.githubusercontent.com/alberto-rota/UnReflectAnything/refs/heads/main/assets/header.png)
 
 ## Installation
 ```bash
@@ -98,7 +98,12 @@ unreflectanything.inference(options)
 ```
 
 ## Citation
-If you include UnReflectAnything in your pipline or research work, please cite us  
+If you include UnReflectAnything in your pipline or research work, we encourage you cite our work. 
+Get the citation entry with 
+```bash
+unreflectanything cite --bibtex
+```
+or copy it directly from below
 ```
 @misc{rota2025unreflectanythingrgbonlyhighlightremoval,
       title={UnReflectAnything: RGB-Only Highlight Removal by Rendering Synthetic Specular Supervision}, 

@@ -179,6 +179,8 @@ def _run_download(args: argparse.Namespace) -> None:
         what = "images"
     elif args.notebooks:
         what = "notebooks"
+    elif args.configs:
+        what = "configs"
     else:
         # Default to weights if nothing specified
         what = "weights"
@@ -201,6 +203,24 @@ def _run_download_weights(args: argparse.Namespace) -> None:
         variant=args.variant,
         force=args.force,
     )
+
+
+def _run_cache_dir(args: argparse.Namespace) -> None:
+    """Print the cache directory (base or a specific asset subdir)."""
+    from unreflectanything.weights import (
+        get_cache_dir
+    )
+    if args.weights:
+        path = get_cache_dir("weights")
+    elif args.images:
+        path = get_cache_dir("images")
+    elif args.notebooks:
+        path = get_cache_dir("notebooks")
+    elif args.configs:
+        path = get_cache_dir("configs")
+    else:
+        path = get_cache_dir()
+    print(path.resolve())
 
 
 def _run_verify(args: argparse.Namespace) -> None:
@@ -458,7 +478,7 @@ def main() -> None:
     # -------------------------------------------------------------------------
     p_dl = subparsers.add_parser(
         "download",
-        help="Download pretrained weights, sample images, or notebooks",
+        help="Download pretrained weights, sample images, notebooks, or configs",
         description="Download assets from the HuggingFace repository.",
     )
     p_dl.add_argument(
@@ -477,9 +497,14 @@ def main() -> None:
         help="Download example Jupyter notebooks",
     )
     p_dl.add_argument(
+        "--configs",
+        action="store_true",
+        help="Download YAML configs (training, inference, etc.)",
+    )
+    p_dl.add_argument(
         "--all",
         action="store_true",
-        help="Download all assets (weights, images, notebooks)",
+        help="Download all assets (weights, images, notebooks, configs)",
     )
     p_dl.add_argument(
         "-o", "--output-dir",
@@ -525,6 +550,36 @@ def main() -> None:
         help="Re-download even if already present",
     )
     p_dl_weights.set_defaults(func=_run_download_weights)
+
+    # -------------------------------------------------------------------------
+    # cache-dir
+    # -------------------------------------------------------------------------
+    p_cache = subparsers.add_parser(
+        "cache-dir",
+        help="Print the cache directory used for downloaded assets",
+        description="Print the base cache directory (~/.cache/unreflectanything or equivalent), or a specific subdir with --weights, --images, --notebooks, or --configs.",
+    )
+    p_cache.add_argument(
+        "--weights",
+        action="store_true",
+        help="Print weights cache subdir",
+    )
+    p_cache.add_argument(
+        "--images",
+        action="store_true",
+        help="Print sample images cache subdir",
+    )
+    p_cache.add_argument(
+        "--notebooks",
+        action="store_true",
+        help="Print notebooks cache subdir",
+    )
+    p_cache.add_argument(
+        "--configs",
+        action="store_true",
+        help="Print configs cache subdir",
+    )
+    p_cache.set_defaults(func=_run_cache_dir)
 
     # -------------------------------------------------------------------------
     # verify (dataset or weights)

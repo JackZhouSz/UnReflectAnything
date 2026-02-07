@@ -15,7 +15,9 @@ Legacy API (still supported):
     run_inference: Run inference on an image directory from InferenceOptions.
     InferenceOptions: Dataclass for inference configuration.
     compute_highlight_mask: Compute binary highlight masks from RGB batch.
-    get_weights_cache_dir: Default cache directory for downloaded weights.
+    get_cache_dir: Base cache directory for downloaded assets.
+    ImageDirDataset: Dataset that reads images from a directory (torch Dataset).
+    DEFAULT_IMAGE_EXTENSIONS: Default image file extensions for ImageDirDataset.
 
 Example:
     >>> from unreflectanything import inference, evaluate
@@ -28,6 +30,8 @@ from __future__ import annotations
 __all__ = [
     # New API (recommended)
     "inference",
+    "model",
+    "UnReflectModel",
     "train",
     "test",
     "download",
@@ -39,7 +43,9 @@ __all__ = [
     "run_inference",
     "InferenceOptions",
     "compute_highlight_mask",
-    "get_weights_cache_dir",
+    "get_cache_dir",
+    "ImageDirDataset",
+    "DEFAULT_IMAGE_EXTENSIONS",
 ]
 
 
@@ -49,6 +55,12 @@ def __getattr__(name: str):
     if name == "inference":
         from unreflectanything.api import inference
         return inference
+    if name == "model":
+        from unreflectanything.api import model
+        return model
+    if name == "UnReflectModel":
+        from unreflectanything.api import UnReflectModel
+        return UnReflectModel
     if name == "train":
         from unreflectanything.api import train
         return train
@@ -84,8 +96,14 @@ def __getattr__(name: str):
     if name == "run_inference":
         from inference import run_inference
         return run_inference
-    if name == "get_weights_cache_dir":
-        from unreflectanything.weights import get_weights_cache_dir
-        return get_weights_cache_dir
+    if name == "get_cache_dir":
+        from unreflectanything.weights import get_cache_dir
+        return get_cache_dir
+    if name == "ImageDirDataset":
+        from unreflectanything.api import ImageDirDataset
+        return ImageDirDataset
+    if name == "DEFAULT_IMAGE_EXTENSIONS":
+        from unreflectanything.api import DEFAULT_IMAGE_EXTENSIONS
+        return DEFAULT_IMAGE_EXTENSIONS
 
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

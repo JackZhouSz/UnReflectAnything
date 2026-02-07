@@ -17,12 +17,14 @@ DEFAULT_WEIGHTS_REPO = "AlbeRota/UnReflectAnything"
 # Default checkpoint filename under the cache dir (must match what the HF repo provides)
 DEFAULT_WEIGHTS_FILENAME = "full_model_weights.pt"
 
-# Subfolder names in the HuggingFace repo
+# Subfolder names in the HuggingFace repo (must match mgmt/upload_hf.py)
+WEIGHTS_SUBFOLDER = "weights"
 IMAGES_SUBFOLDER = "sample_images"
 NOTEBOOKS_SUBFOLDER = "notebooks"
+CONFIGS_SUBFOLDER = "configs"
 
 
-def get_cache_dir() -> Path:
+def get_cache_dir(subdir: Optional[str] = "") -> Path:
     """Return the default base directory for caching downloaded assets (cross-platform).
 
     This is the parent directory for weights, images, and notebooks.
@@ -43,42 +45,14 @@ def get_cache_dir() -> Path:
     else:
         # Linux, macOS, etc.: XDG_CACHE_HOME or ~/.cache
         base = os.environ.get("XDG_CACHE_HOME", os.path.expanduser("~/.cache"))
-    return Path(base).expanduser().resolve() / "unreflectanything"
-
-
-def get_weights_cache_dir() -> Path:
-    """Return the default directory for caching downloaded weights (cross-platform).
-
-    - **Linux / macOS**: Uses ``$XDG_CACHE_HOME`` if set (XDG Base Dir spec), otherwise
-      ``~/.cache``. Result: ``$XDG_CACHE_HOME/unreflectanything/weights`` or
-      ``~/.cache/unreflectanything/weights``.
-    - **Windows**: Uses ``%LOCALAPPDATA%`` if set (e.g. ``C:\\Users\\...\\AppData\\Local``),
-      otherwise ``~/.cache`` (``~`` expands to the user profile). Result:
-      ``%LOCALAPPDATA%\\unreflectanything\\weights`` or ``~/.cache/unreflectanything/weights``.
-
-    Returns:
-        Path to the weights cache directory.
-    """
-    return get_cache_dir() / "weights"
-
-
-def get_images_cache_dir() -> Path:
-    """Return the default directory for caching downloaded sample images.
-
-    Returns:
-        Path to the images cache directory.
-    """
-    return get_cache_dir() / "images"
-
-
-def get_notebooks_cache_dir() -> Path:
-    """Return the default directory for caching downloaded notebooks.
-
-    Returns:
-        Path to the notebooks cache directory.
-    """
-    return get_cache_dir() / "notebooks"
-
+    if subdir not in ["weights", "images", "notebooks", "configs"]:
+        import warnings
+        warnings.warn(
+            f"Unknown asset subdir '{subdir}', returning parent cache dir. "
+            "Valid options: 'weights', 'images', 'notebooks', 'configs'."
+        )
+        subdir = ""
+    return Path(base).expanduser().resolve() / "unreflectanything" / subdir
 
 def _ensure_huggingface_hub():
     """Ensure huggingface_hub is installed, exit with helpful message if not."""
@@ -118,23 +92,33 @@ def download_weights(
     repo_id = os.environ.get("UNREFLECTANYTHING_WEIGHTS_REPO", DEFAULT_WEIGHTS_REPO)
     
     if output_dir is None:
-        output_dir = get_weights_cache_dir()
+        output_dir = get_cache_dir(subdir="weights")
     else:
         output_dir = Path(output_dir).expanduser().resolve()
     
     output_dir.mkdir(parents=True, exist_ok=True)
 
     revision = None if variant == "default" else variant
-    
-    # Download only the weights file, not the entire repo
+
+    # Download only the weights/ subfolder from the repo
     snapshot_download(
         repo_id=repo_id,
         local_dir=str(output_dir),
         revision=revision,
         force_download=force,
-        allow_patterns=["*.pt", "*.pth", "*.bin", "*.safetensors", "config*.yaml", "*.json"],
-        ignore_patterns=[IMAGES_SUBFOLDER + "/*", NOTEBOOKS_SUBFOLDER + "/*"],
+        allow_patterns=[f"{WEIGHTS_SUBFOLDER}/*", f"{WEIGHTS_SUBFOLDER}/**/*"],
     )
+    # snapshot_download preserves repo structure: files land in output_dir/weights/
+    subfolder_path = output_dir / WEIGHTS_SUBFOLDER
+    if subfolder_path.exists() and subfolder_path.is_dir():
+        for item in subfolder_path.iterdir():
+            target = output_dir / item.name
+            if not target.exists() or force:
+                item.rename(target)
+        try:
+            subfolder_path.rmdir()
+        except OSError:
+            pass
     print(f"Weights saved to {output_dir}")
     return output_dir
 
@@ -160,7 +144,7 @@ def download_images(
     repo_id = os.environ.get("UNREFLECTANYTHING_WEIGHTS_REPO", DEFAULT_WEIGHTS_REPO)
     
     if output_dir is None:
-        output_dir = get_images_cache_dir()
+        output_dir = get_cache_dir(subdir="images")
     else:
         output_dir = Path(output_dir).expanduser().resolve()
     
@@ -213,7 +197,7 @@ def download_notebooks(
     repo_id = os.environ.get("UNREFLECTANYTHING_WEIGHTS_REPO", DEFAULT_WEIGHTS_REPO)
     
     if output_dir is None:
-        output_dir = get_notebooks_cache_dir()
+        output_dir = get_cache_dir(subdir="notebooks")
     else:
         output_dir = Path(output_dir).expanduser().resolve()
     
@@ -251,12 +235,67 @@ def download_notebooks(
     return output_dir
 
 
+def download_configs(
+    output_dir: Optional[Path] = None,
+    force: bool = False,
+) -> Path:
+    """Download example/training config YAML files.
+
+    Configs are hosted in the configs/ subfolder of the HuggingFace repo.
+
+    Args:
+        output_dir: Directory to save configs. If None, uses the default cache
+            directory (``~/.cache/unreflectanything/configs``).
+        force: If True, re-download even if files already exist.
+
+    Returns:
+        Path to the directory where configs were saved.
+    """
+    snapshot_download, _ = _ensure_huggingface_hub()
+
+    repo_id = os.environ.get("UNREFLECTANYTHING_WEIGHTS_REPO", DEFAULT_WEIGHTS_REPO)
+
+    if output_dir is None:
+        output_dir = get_cache_dir(subdir="configs")
+    else:
+        output_dir = Path(output_dir).expanduser().resolve()
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    snapshot_download(
+        repo_id=repo_id,
+        local_dir=str(output_dir),
+        force_download=force,
+        allow_patterns=[f"{CONFIGS_SUBFOLDER}/*", f"{CONFIGS_SUBFOLDER}/**/*"],
+    )
+
+    subfolder_path = output_dir / CONFIGS_SUBFOLDER
+    if subfolder_path.exists() and subfolder_path.is_dir():
+        for item in subfolder_path.iterdir():
+            target = output_dir / item.name
+            if not target.exists() or force:
+                if item.is_file():
+                    item.rename(target)
+                elif item.is_dir():
+                    import shutil
+                    if target.exists():
+                        shutil.rmtree(target)
+                    shutil.move(str(item), str(target))
+        try:
+            subfolder_path.rmdir()
+        except OSError:
+            pass
+
+    print(f"Configs saved to {output_dir}")
+    return output_dir
+
+
 def download_all(
     output_dir: Optional[Path] = None,
     variant: str = "default",
     force: bool = False,
 ) -> Path:
-    """Download all assets: weights, sample images, and notebooks.
+    """Download all assets: weights, sample images, notebooks, and configs.
 
     Args:
         output_dir: Base directory to save all assets. If None, uses the default
@@ -271,12 +310,13 @@ def download_all(
         output_dir = get_cache_dir()
     else:
         output_dir = Path(output_dir).expanduser().resolve()
-    
+
     output_dir.mkdir(parents=True, exist_ok=True)
-    
+
     download_weights(output_dir=output_dir / "weights", variant=variant, force=force)
     download_images(output_dir=output_dir / "images", force=force)
     download_notebooks(output_dir=output_dir / "notebooks", force=force)
-    
+    download_configs(output_dir=output_dir / "configs", force=force)
+
     print(f"All assets saved to {output_dir}")
     return output_dir

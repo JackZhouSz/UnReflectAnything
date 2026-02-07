@@ -21,12 +21,95 @@ Example usage:
 
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict, List, Literal, Optional, Union
+from typing import TYPE_CHECKING, Dict, List, Literal, Optional, Sequence, Tuple, Union
 from os import PathLike
+
+try:
+    from PIL import Image
+    from torch.utils.data import Dataset
+    from torchvision.transforms import functional as TF
+except ImportError:
+    Dataset = None  # type: ignore[misc, assignment]
+    Image = None  # type: ignore[misc, assignment]
+    TF = None  # type: ignore[misc, assignment]
 
 if TYPE_CHECKING:
     from os import PathLike
     from torch import Tensor
+
+# Used only as base for UnReflectModel; imported lazily in class definition
+def _nn_module_base():
+    import torch.nn as nn
+    return nn.Module
+
+
+# =============================================================================
+# IMAGE DATASET
+# =============================================================================
+
+# Default extensions consistent with inference.py
+DEFAULT_IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff", ".webp")
+
+
+def _collect_image_paths(
+    root: Path,
+    extensions: Sequence[str],
+) -> List[Path]:
+    """Collect image paths under root matching extensions (case-insensitive)."""
+    lower_exts = tuple(ext.lower() for ext in extensions)
+    paths = [
+        p
+        for p in root.rglob("*")
+        if p.is_file() and p.suffix.lower() in lower_exts
+    ]
+    return sorted(paths)
+
+
+if Dataset is not None:
+    class ImageDirDataset(Dataset):  # type: ignore[no-redef]
+        """
+        Dataset that reads images from a directory and returns tensors.
+
+        Each item is a tensor of shape (3, H, W) in [0, 1], optionally resized.
+        """
+
+        def __init__(
+            self,
+            root_dir: Union[str, PathLike, Path],
+            extensions: Sequence[str] = DEFAULT_IMAGE_EXTENSIONS,
+            target_size: Optional[Tuple[int, int]] = None,
+            return_path: bool = False,
+        ):
+            """
+            Args:
+                root_dir: Directory to scan for images (recursive).
+                extensions: File suffixes to consider (e.g. (".png", ".jpg")).
+                target_size: If set, (H, W) to resize each image; antialias used.
+                return_path: If True, __getitem__ returns (tensor, path_str).
+            """
+            self.root = Path(root_dir)
+            self.extensions = tuple(extensions)
+            self.target_size = target_size  # (H, W) or None
+            self.return_path = return_path
+            self.paths = _collect_image_paths(self.root, self.extensions)
+            if not self.paths:
+                raise FileNotFoundError(f"No images found under {self.root}")
+
+        def __len__(self) -> int:
+            return len(self.paths)
+
+        def __getitem__(self, idx: int):
+            path = self.paths[idx]
+            with Image.open(path) as img:
+                rgb = img.convert("RGB")
+                x = TF.to_tensor(rgb)  # (3, H, W), float32, [0, 1]
+            if self.target_size is not None:
+                x = TF.resize(x, self.target_size, antialias=True)  # (3, H_t, W_t)
+            if self.return_path:
+                return x, str(path)
+            return x
+else:
+    ImageDirDataset = None  # type: ignore[misc, assignment]
 
 
 # =============================================================================
@@ -103,7 +186,7 @@ def inference(
     )
     from unreflectanything.weights import (
         DEFAULT_WEIGHTS_FILENAME,
-        get_weights_cache_dir,
+        get_cache_dir,
     )
 
     # Determine if input is a tensor
@@ -148,7 +231,7 @@ def inference(
 
             # Resolve weights path
             if weights_path is None:
-                resolved_weights = get_weights_cache_dir() / DEFAULT_WEIGHTS_FILENAME
+                resolved_weights = get_cache_dir("weights") / DEFAULT_WEIGHTS_FILENAME
             else:
                 resolved_weights = Path(weights_path).expanduser().resolve()
 
@@ -176,6 +259,198 @@ def inference(
 
             _run_inference_files(options)
             return None
+
+
+# =============================================================================
+# MODEL FACTORY AND WRAPPER (ura.model() / ura.model(pretrained=True))
+# =============================================================================
+
+
+def model(
+    pretrained: bool = False,
+    weights_path: Optional[Union[str, PathLike, Path]] = None,
+    device: str = "cuda",
+    config_path: Optional[Union[str, PathLike, Path, dict]] = None,
+    verbose: bool = False,
+):
+    """Return the model class or a pretrained model instance callable with batched RGB.
+
+    Use this for a lightweight API: get a callable module and run it on tensors.
+
+    Args:
+        pretrained: If False (default), return the underlying model class
+            (UnReflect_Model_TokenInpainter) for custom instantiation or training.
+            If True, return an ``UnReflectModel`` instance with weights loaded,
+            which you can call with a batched RGB tensor.
+        weights_path: Path to checkpoint. Only used when pretrained=True.
+            Defaults to cache (~/.cache/unreflectanything/weights/full_model_weights.pt).
+        device: Device to load the model on when pretrained=True (e.g. ``"cuda"``, ``"cpu"``).
+        config_path: Optional config source (YAML path or dict) for architecture when
+            loading from checkpoint. Only used when pretrained=True.
+
+    Returns:
+        If pretrained=False: the model class (UnReflect_Model_TokenInpainter).
+        If pretrained=True: an ``UnReflectModel`` instance (nn.Module) that can
+        be called with ``model(images)`` where images is [B, 3, H, W].
+
+    Example:
+        >>> import unreflectanything as ura
+        >>> uramodel = ura.model(pretrained=True)
+        >>> images = torch.rand(2, 3, 448, 448, device="cuda")  # [B, 3, H, W]
+        >>> diffuse = uramodel(images)  # [B, 3, H, W]
+        >>> # Or get the class only (e.g. for training)
+        >>> ModelClass = ura.model()
+    """
+    
+    from main import create_model_from_config, load_and_process_config   
+    from pathlib import Path
+    from unreflectanything.weights import get_cache_dir
+    
+    if config_path is None:
+        config_path = get_cache_dir("weights").parent / "configs" / "pretrained_config.yaml"
+    if config_path is not None and config_path.is_dir():
+        config_path = Path(config_path)
+        config_path = config_path / "pretrained_config.yaml"
+    model_config = load_and_process_config(config_path)
+    if verbose:
+        print(f"Loaded model configuration from: `{config_path}`")
+        
+    if not pretrained:
+        return create_model_from_config(model_config, device, verbose=verbose)
+    # Check that weights_path exists and contains "full_model.pth"
+    resolved_weights = None
+    if weights_path is not None:
+        
+        resolved_weights = Path(weights_path).expanduser().resolve()
+        if not resolved_weights.exists():
+            raise FileNotFoundError(f"Weights file not found at '{resolved_weights}'.\n Please run 'unreflect download --weights' or 'unreflectanything.download('weights') first.")
+        if "full_model_weights.pth" not in resolved_weights.name:
+            raise ValueError(
+                f"Cannot find full model weights in '{resolved_weights}.\n Please run 'unreflect download --weights' or 'unreflectanything.download('weights') first."
+            )
+        
+    return UnReflectModel(
+        pretrained=True,
+        weights_path=weights_path,
+        device=device,
+        config=model_config,
+        verbose=verbose,
+    )
+
+
+class UnReflectModel(_nn_module_base()):
+    """Thin wrapper (nn.Module) around the loaded UnReflect model for tensor-in, tensor-out inference.
+
+    This wrapper is callable so that ``model(images)`` returns the diffuse
+    prediction tensor. Use ``ura.model(pretrained=True)`` to obtain an instance.
+    The inner model is stored as a submodule so ``.to(device)``, ``.eval()``,
+    and ``.parameters()`` work as expected.
+
+    Attributes:
+        image_size: Expected spatial size (side) for the inner encoder (e.g. 448).
+        device: Device the  model lives on (read-only).
+    """
+
+    def __init__(
+        self,
+        pretrained: bool = True,
+        weights_path: Optional[Union[str, PathLike, Path]] = None,
+        device: str = "cuda",
+        config: Optional[Union[str, PathLike, Path, dict]] = None,
+        verbose: bool = False,
+    ):
+        if not pretrained:
+            raise ValueError("UnReflectModel(pretrained=False) is not supported; use ura.model() to get the class.")
+        super().__init__()
+        from inference import InferenceOptions, load_model
+        from unreflectanything.weights import (
+            DEFAULT_WEIGHTS_FILENAME,
+            get_cache_dir,
+        )
+
+        if weights_path is None:
+            resolved_weights = get_cache_dir("weights") / DEFAULT_WEIGHTS_FILENAME
+        else:
+            resolved_weights = Path(weights_path).expanduser().resolve()
+        if not resolved_weights.exists():
+            raise FileNotFoundError(
+                f"Weights not found at {resolved_weights}. Run 'unreflect download --weights' first."
+            )
+
+        options = InferenceOptions(
+            weights_path=resolved_weights,
+            input_dir=Path("."),
+            output_dir=Path("."),
+            device=device,
+        )
+        if config is not None:
+            options = _apply_config_to_options(options, config)
+
+        torch_device = __import__("torch").device(_resolve_device(device))
+        inner = load_model(options, torch_device, verbose=verbose)
+        self._model = inner  # registered as submodule by nn.Module
+        self._device = torch_device
+        cfg = self._model.dinov3.config
+        self.image_size = getattr(cfg, "image_size", cfg.get("image_size", 448) if hasattr(cfg, "get") else 448)
+
+    @property
+    def device(self):
+        return self._device
+
+    def forward(
+        self,
+        images: "Tensor",
+        inpaint_mask_override: Optional["Tensor"] = None,
+        return_dict: bool = False,
+    ) -> Union["Tensor", Dict[str, "Tensor"]]:
+        """Run inference on a batch of RGB images.
+
+        Args:
+            images: Batched RGB tensor [B, 3, H, W], values in [0, 1]. Will be
+                moved to the model device and resized internally if needed by the
+                encoder (see ``image_size``).
+            inpaint_mask_override: Optional [B, 1, H, W] mask to force inpainting
+                regions (1 = inpaint). If None, the model uses its highlight head.
+            return_dict: If True, return the full output dict (e.g. ``diffuse``,
+                ``highlight``, ``patch_mask``). If False, return only the
+                diffuse tensor [B, 3, H, W].
+
+        Returns:
+            If return_dict=False: diffuse tensor [B, 3, H, W].
+            If return_dict=True: dict with at least ``diffuse``, ``highlight``, etc.
+        """
+        import torch
+
+        if images.dim() != 4 or images.shape[1] != 3:
+            raise ValueError(f"images must be [B, 3, H, W], got shape {tuple(images.shape)}")
+        batch = {
+            "rgb": images.to(device=self._device, dtype=torch.float32),
+        }
+        if inpaint_mask_override is not None:
+            batch["inpaint_mask_override"] = inpaint_mask_override.to(
+                device=self._device, dtype=torch.float32
+            )
+        self._model.eval()
+        with torch.no_grad():
+            out = self._model(batch)
+        diffuse = out.get("diffuse")
+        if diffuse is None:
+            raise KeyError("Model output does not contain 'diffuse'")
+        diffuse = diffuse.clamp(0.0, 1.0)
+        if return_dict:
+            out["diffuse"] = diffuse
+            return out
+        return diffuse
+
+    def eval(self):
+        """Set the inner model to eval mode."""
+        self._model.eval()
+        return self
+
+    def train(self, mode: bool = True):
+        """Set the inner model to train mode (for fine-tuning)."""
+        self._model.train(mode)
+        return self
 
 
 def _resolve_device(device: str) -> str:
@@ -220,7 +495,7 @@ def _inference_tensor(
     from inference import InferenceOptions, load_model
     from unreflectanything.weights import (
         DEFAULT_WEIGHTS_FILENAME,
-        get_weights_cache_dir,
+        get_cache_dir,
     )
 
     # Validate input tensor
@@ -231,7 +506,7 @@ def _inference_tensor(
 
     # Resolve weights path
     if weights_path is None:
-        resolved_weights = get_weights_cache_dir() / DEFAULT_WEIGHTS_FILENAME
+        resolved_weights = get_cache_dir("weights") / DEFAULT_WEIGHTS_FILENAME
     else:
         resolved_weights = Path(weights_path).expanduser().resolve()
 
@@ -268,8 +543,6 @@ def _inference_tensor(
     with torch.no_grad():
         outputs = model({
             "rgb": input_tensor,
-            "inpaint_mask_dilation": getattr(options, "inpaint_mask_dilation", 11),
-            # "inpaint_mask_override": inpaint_mask,
         })
 
     diffuse = outputs.get("diffuse")
@@ -302,12 +575,12 @@ def _inference_files_return_tensors(
     )
     from unreflectanything.weights import (
         DEFAULT_WEIGHTS_FILENAME,
-        get_weights_cache_dir,
+        get_cache_dir,
     )
 
     # Resolve weights path
     if weights_path is None:
-        resolved_weights = get_weights_cache_dir() / DEFAULT_WEIGHTS_FILENAME
+        resolved_weights = get_cache_dir("weights") / DEFAULT_WEIGHTS_FILENAME
     else:
         resolved_weights = Path(weights_path).expanduser().resolve()
 
@@ -364,7 +637,6 @@ def _inference_files_return_tensors(
         with torch.no_grad():
             outputs = model({
                 "rgb": rgb_batch,
-                "inpaint_mask_dilation": getattr(options, "inpaint_mask_dilation", 11),
             })
 
         diffuse = outputs.get("diffuse")
@@ -407,8 +679,6 @@ def _apply_config_to_options(options, config):
         options.brightness_threshold = float(config_dict["brightness_threshold"])
     if "resize_output" in config_dict:
         options.resize_output = bool(config_dict["resize_output"])
-    if "inpaint_mask_dilation" in config_dict:
-        options.inpaint_mask_dilation = int(config_dict["inpaint_mask_dilation"])
     if "num_workers" in config_dict:
         options.num_workers = int(config_dict["num_workers"])
 
@@ -541,7 +811,9 @@ def test(
 # =============================================================================
 
 def download(
-    what: Literal["weights", "images", "notebooks", "all"],
+    what: Optional[Literal["weights", "images", "notebooks", "configs", "all"]] = None,
+    *,
+    asset: Optional[Literal["weights", "images", "notebooks", "configs", "all"]] = None,
     output_dir: Optional[Union[str, PathLike, Path]] = None,
     variant: str = "default",
     force: bool = False,
@@ -549,14 +821,18 @@ def download(
     """Download assets from the HuggingFace repository.
 
     This function downloads pretrained weights, sample images, or example
-    notebooks from the UnReflectAnything HuggingFace repository.
+    notebooks from the UnReflectAnything HuggingFace repository. Same
+    behavior as the CLI ``unreflect download --weights`` / ``--images`` /
+    ``--notebooks`` / ``--all``.
 
     Args:
-        what: What to download:
-            - "weights": Pretrained model weights
-            - "images": Sample images for testing
-            - "notebooks": Example Jupyter notebooks
+        what: What to download (positional). Use ``asset=`` as alias.
+            - "weights": Pretrained model weights (from repo subdir weights/)
+            - "images": Sample images (from repo subdir sample_images/)
+            - "notebooks": Example Jupyter notebooks (from repo subdir notebooks/)
+            - "configs": YAML configs (from repo subdir configs/)
             - "all": Download everything
+        asset: Alias for ``what``. Example: ``download(asset="weights")``.
         output_dir: Directory to save downloaded files. If None, uses the
             default cache directory (~/.cache/unreflectanything/).
         variant: Weights variant to download (e.g., "default").
@@ -567,52 +843,68 @@ def download(
 
     Raises:
         ImportError: If huggingface_hub is not installed.
-        ValueError: If 'what' is not a valid option.
+        ValueError: If neither ``what`` nor ``asset`` is set, or value is invalid.
 
     Example:
-        >>> # Download weights to default location
+        >>> # Download weights (positional or keyword)
         >>> path = download("weights")
-        >>> print(f"Weights saved to: {path}")
-        
+        >>> path = download(asset="weights")
+        >>> # Download images or notebooks
+        >>> download(asset="images")
+        >>> download(asset="notebooks")
+        >>> download(asset="configs")
         >>> # Download everything to custom directory
         >>> download("all", output_dir="./assets/", force=True)
     """
+    resolved_what = asset if asset is not None else what
+    if resolved_what is None:
+        resolved_what = "weights"  # CLI default
+    if resolved_what not in ("weights", "images", "notebooks", "configs", "all"):
+        raise ValueError(
+            f"Invalid 'what'/'asset' value: {resolved_what!r}. "
+            "Must be 'weights', 'images', 'notebooks', 'configs', or 'all'."
+        )
     from unreflectanything.weights import (
+        download_configs,
         download_images,
         download_notebooks,
         download_weights,
-        get_weights_cache_dir,
+        get_cache_dir,
     )
 
     if output_dir is None:
-        output_path = get_weights_cache_dir().parent
+        output_path = get_cache_dir("weights").parent
     else:
         output_path = Path(output_dir).expanduser().resolve()
 
     output_path.mkdir(parents=True, exist_ok=True)
 
-    if what == "weights":
+    if resolved_what == "weights":
         weights_dir = output_path / "weights"
         download_weights(output_dir=weights_dir, variant=variant, force=force)
         return weights_dir
-    elif what == "images":
+    elif resolved_what == "images":
         images_dir = output_path / "images"
         download_images(output_dir=images_dir, force=force)
         return images_dir
-    elif what == "notebooks":
+    elif resolved_what == "notebooks":
         notebooks_dir = output_path / "notebooks"
         download_notebooks(output_dir=notebooks_dir, force=force)
         return notebooks_dir
-    elif what == "all":
+    elif resolved_what == "configs":
+        configs_dir = output_path / "configs"
+        download_configs(output_dir=configs_dir, force=force)
+        return configs_dir
+    else:  # "all"
         weights_dir = output_path / "weights"
         images_dir = output_path / "images"
         notebooks_dir = output_path / "notebooks"
+        configs_dir = output_path / "configs"
         download_weights(output_dir=weights_dir, variant=variant, force=force)
         download_images(output_dir=images_dir, force=force)
         download_notebooks(output_dir=notebooks_dir, force=force)
+        download_configs(output_dir=configs_dir, force=force)
         return output_path
-    else:
-        raise ValueError(f"Invalid 'what' value: {what}. Must be 'weights', 'images', 'notebooks', or 'all'.")
 
 
 # =============================================================================
@@ -742,10 +1034,10 @@ def _verify_weights_impl(
     from inference import InferenceOptions, load_model
     from unreflectanything.weights import (
         DEFAULT_WEIGHTS_FILENAME,
-        get_weights_cache_dir,
+        get_cache_dir,
     )
     if weights_path is None:
-        resolved = get_weights_cache_dir() / DEFAULT_WEIGHTS_FILENAME
+        resolved = get_cache_dir("weights") / DEFAULT_WEIGHTS_FILENAME
     else:
         resolved = Path(weights_path).expanduser().resolve()
 
@@ -764,7 +1056,7 @@ def _verify_weights_impl(
 
     try:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        load_model(options, device, strict=True, quiet=True)
+        load_model(options, device, strict=True, verbose=False)
         print("✔️  Weights verified: loaded into model with no key alignment errors.")
         return True
     except (KeyError, RuntimeError, FileNotFoundError) as e:
@@ -975,6 +1267,8 @@ def _get_fallback_citation(format: str) -> str:
 
 __all__ = [
     "inference",
+    "model",
+    "UnReflectModel",
     "train",
     "test",
     "download",

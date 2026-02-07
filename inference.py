@@ -150,7 +150,7 @@ class UsageMonitor:
                 self.handle = pynvml.nvmlDeviceGetHandleByIndex(0)
                 self.energy_initialized = True
             except Exception as e:
-                _console().log(
+                print(
                     f"[yellow]Warning: Could not initialize GPU energy monitoring: {e}[/yellow]"
                 )
                 self.energy_initialized = False
@@ -317,7 +317,7 @@ class UsageMonitor:
                 batch_size = rgb_batch.shape[0]
                 self.flops_per_image = batch_flops / batch_size
             except Exception as e:
-                _console().log(f"[yellow]Warning: Could not compute FLOPS: {e}[/yellow]")
+                print(f"[yellow]Warning: Could not compute FLOPS: {e}[/yellow]")
                 self.flops_per_forward = None
                 self.flops_per_image = None
 
@@ -467,7 +467,7 @@ def parse_cli() -> InferenceOptions:
     if not config_path.exists():
         raise FileNotFoundError(f"Config file not found: {config_path}")
 
-    _console().log(f"Loading inference configuration from [bold]{config_path}[/bold]")
+    print(f"Loading inference configuration from '{config_path}'")
 
     with config_path.open("r", encoding="utf-8") as handle:
         raw_options = yaml.safe_load(handle)
@@ -480,8 +480,8 @@ def parse_cli() -> InferenceOptions:
     # Default to cache dir (same as download-weights) when omitted or set to "default"
     if weights_path is None or (isinstance(raw_weights, str) and str(raw_weights).strip().lower() == "default"):
         try:
-            from unreflectanything.weights import DEFAULT_WEIGHTS_FILENAME, get_weights_cache_dir
-            weights_path = get_weights_cache_dir() / DEFAULT_WEIGHTS_FILENAME
+            from unreflectanything.weights import DEFAULT_WEIGHTS_FILENAME, get_cache_dir
+            weights_path = get_cache_dir("weights") / DEFAULT_WEIGHTS_FILENAME
         except ImportError:
             weights_path = None
     input_dir = _as_path(raw_options.get("input_dir"))
@@ -490,8 +490,8 @@ def parse_cli() -> InferenceOptions:
     if weights_path is None or not weights_path.exists():
         cache_dir = None
         try:
-            from unreflectanything.weights import get_weights_cache_dir
-            cache_dir = get_weights_cache_dir()
+            from unreflectanything.weights import get_cache_dir
+            cache_dir = get_cache_dir("weights")
         except ImportError:
             pass
         hint = " Run 'unreflectanything download-weights' first, or set weights_path in the config." if cache_dir else ""
@@ -504,7 +504,7 @@ def parse_cli() -> InferenceOptions:
         raise ValueError("output_dir must be provided")
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    _console().log(
+    print(
         "✔️  Configuration loaded",
         # extra={
         #     "config": {
@@ -622,7 +622,7 @@ def load_model(
     options: InferenceOptions,
     device: "torch.device",
     strict: bool = False,
-    quiet: bool = False,
+    verbose: bool = False,
 ) -> "UnReflect_Model_TokenInpainter":
     """Build the model architecture and load checkpoint weights.
 
@@ -631,17 +631,16 @@ def load_model(
         device: Target device for the model.
         strict: If True, load_state_dict uses strict=True; missing or unexpected
             keys will raise RuntimeError. If False, mismatches are reported as warnings.
-        quiet: If True, suppress console logging (e.g. for verification).
+        verbose: If True, print progress information.
 
     Returns:
         Loaded model in eval mode.
     """
     import torch
     from main import create_model_from_config
-
-    if not quiet:
-        _console().log(
-            f"Loading checkpoint from [bold]{options.weights_path}[/bold] on device [bold]{device}[/bold]"
+    if verbose:
+        print(
+            f"Loading checkpoint from '{options.weights_path}' on device '{device}'"
         )
     checkpoint = torch.load(
         options.weights_path, map_location="cpu", weights_only=False
@@ -651,31 +650,31 @@ def load_model(
     config = _load_config_from_checkpoint(checkpoint)
     config_source = None
     if config is not None:
-        config_source = f"checkpoint [bold]{options.weights_path}[/bold]"
+        config_source = f"checkpoint '{options.weights_path}'"
     else:
         config = _load_config_from_run(options)
         if config is not None:
             config_source = (
-                f"run directory [bold]{options.runs_dir}/{options.run}[/bold]"
+                f"run directory '{options.runs_dir}/{options.run}'"
             )
         else:
             config = _load_config_from_yaml(options)
             if config is not None:
-                config_source = f"YAML file [bold]{options.model_config_path}[/bold]"
+                config_source = f"YAML file '{options.model_config_path}'"
 
     if config is None:
         raise RuntimeError(
             "Unable to reconstruct model configuration. Provide model_config_path"
             " or ensure the checkpoint/run stores a serialised config."
         )
-    if config_source is not None and not quiet:
-        _console().log(f"Model configuration loaded from {config_source}")
+    if config_source is not None and verbose:
+        print(f"Model configuration loaded from {config_source}")
 
     if options.model_module is not None:
         config.MODEL.MODEL_MODULE = options.model_module
     config.USE_TORCH_COMPILE = False
 
-    model = create_model_from_config(config, device,verbose=False)
+    model = create_model_from_config(config, device,verbose=verbose)
     state_dict = checkpoint.get("model_state_dict")
     if state_dict is None:
         raise KeyError("Checkpoint does not contain model_state_dict")
@@ -687,8 +686,8 @@ def load_model(
             print(f"Warning: unexpected keys when loading checkpoint: {unexpected}")
 
     model.eval()
-    if not quiet:
-        _console().log("✔️  Model loaded and ready for inference")
+    if verbose:
+        print("✔️  Model loaded and ready for inference")
     return model
 
 
@@ -704,7 +703,7 @@ def list_image_paths(root: Path, extensions: Sequence[str]) -> List[Path]:
     if not files:
         raise RuntimeError(f"No images found under {root}")
     sorted_files = sorted(files)
-    _console().log(f"Discovered [bold]{len(sorted_files)}[/bold] images under {root}")
+    print(f"Discovered '{len(sorted_files)}' images under {root}")
     return sorted_files
 
 
@@ -865,12 +864,12 @@ def run_inference(options: InferenceOptions) -> None:
         monitor = UsageMonitor(desired_device, model)
         monitor.start_monitoring()
 
-    _console().log(
-        f"Starting inference over [bold]{len(image_paths)}[/bold] images with batch size {options.batch_size}"
+    print(
+        f"Starting inference over '{len(image_paths)}' images with batch size {options.batch_size}"
     )
     if options.num_workers > 0:
-        _console().log(
-            f"Using [bold]{options.num_workers}[/bold] parallel workers for image loading"
+        print(
+            f"Using '{options.num_workers}' parallel workers for image loading"
         )
 
     # Dataset class defined here so torch/PIL are only loaded when run_inference runs
@@ -973,13 +972,13 @@ def run_inference(options: InferenceOptions) -> None:
     # Stop monitoring and generate report
     if monitor is not None:
         monitor.stop_monitoring()
-        _console().log("")  # Empty line for spacing
+        print("")  # Empty line for spacing
         report_table = monitor.generate_report(len(image_paths))
         _console().print(report_table)
-        _console().log("")  # Empty line for spacing
+        print("")  # Empty line for spacing
 
-    _console().log(
-        f"✨ Inference complete. Results saved to [bold]{options.output_dir}[/bold]"
+    print(
+        f"✨ Inference complete. Results saved to '{options.output_dir}'"
     )
 
 

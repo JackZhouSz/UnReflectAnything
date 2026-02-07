@@ -18,6 +18,7 @@ sandboxes/
 # Keeping the code and ignoring result files
 DATA/benchmark/
 DATA/results/
+results/
 DATA/runs_backups/
 DATA/datasets/
 # -----------------------------------------------------------------------------------------

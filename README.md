@@ -1,11 +1,12 @@
 # UnReflectAnything
 
-[![Project](https://img.shields.io/badge/Project-webpage-543fce?logo=")](https://alberto-rota.github.io/UnReflectAnything/)
-[![PyPI](https://img.shields.io/badge/pip%20install-PyPI-3776AB?logo=python&logoColor=3776AB)](https://pypi.org/project/unreflectanything/)
+[![Project](https://img.shields.io/badge/Project-webpage-ff611b?logo=googlehome&logoColor=ff611b)](https://alberto-rota.github.io/UnReflectAnything/)
+[![PyPI](https://img.shields.io/badge/pip%20install-PyPI-76b1f3?logo=python&logoColor=76b1f3)](https://pypi.org/project/unreflectanything/)
 [![Paper](https://img.shields.io/badge/Paper-arXiv-B31B1B?logo=arxiv&logoColor=B31B1B)](https://huggingface.co/spaces/Stable-X/StableDelight)
 [![Weights](https://img.shields.io/badge/Weights-HuggingFace%20-FFD21E?logo=huggingface&logoColor=FFD21E)](https://huggingface.co/spaces/AlbeRota/UnReflectAnything)
 [![Demo](https://img.shields.io/badge/Demo-HuggingFace%20-FFD21E?logo=huggingface&logoColor=FFD21E)](https://huggingface.co/AlbeRota/UnReflectAnything)
-[![License](https://img.shields.io/badge/License-MIT-1E811F)](https://mit-license.org/)
+[![Wiki](https://img.shields.io/badge/License-MIT-1E811F)](https://mit-license.org/)
+[![License](https://img.shields.io/badge/Wiki-GitHub-9187FF?logo=wikipedia&logoColor=9187FF)](https://github.com/alberto-rota/UnReflectAnything/wiki)
 ### RGB-Only Highlight Removal by Rendering Synthetic Specular Supervision
 UnReflectAnything inputs any RGB image and removes specular highlights, returning a clean diffuse-only outputs. We trained UnReflectAnything by synthetizing specularities and supervising in DINOv3 feature space.
 

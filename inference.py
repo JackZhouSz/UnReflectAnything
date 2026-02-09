@@ -8,8 +8,6 @@ directory structure.
 
 from __future__ import annotations
 
-import argparse
-import json
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -17,8 +15,13 @@ from typing import List, Optional, Sequence, Tuple
 
 from utilities.inference import _console
 from utilities.inference import UsageMonitor
-from utilities.inference import save_diffuse_batch,compute_highlight_mask,list_image_paths
+from utilities.inference import (
+    save_diffuse_batch,
+    compute_highlight_mask,
+    list_image_paths,
+)
 from utilities.config import load_pretrained
+
 
 @dataclass
 class InferenceOptions:
@@ -80,6 +83,7 @@ class InferenceOptions:
     brightness_threshold: float = 0.7
     monitor_usage: bool = False
     num_workers: int = 4
+
 
 def run_inference(options: InferenceOptions) -> None:
     """Execute end-to-end inference on the dataset described by ``options``."""
@@ -231,6 +235,7 @@ def run_inference(options: InferenceOptions) -> None:
 def main() -> None:
     """CLI entry point."""
     from endpoints.inference_ import parse_cli
+
     options = parse_cli()
     run_inference(options)
 

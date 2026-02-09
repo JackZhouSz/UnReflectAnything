@@ -6,9 +6,10 @@ from typing import Optional, TYPE_CHECKING
 from pathlib import Path
 from typing import Sequence, List, Tuple
 
+
 class UsageMonitor:
     """Monitor FLOPS and energy consumption during inference."""
-    
+
     if TYPE_CHECKING:
         from torch import Tensor
         import torch
@@ -385,6 +386,7 @@ def suppress_stdout_stderr():
             warnings.showwarning = old_warnings_showwarning
             warnings.resetwarnings()
 
+
 def save_diffuse_batch(
     diffuse_batch: "Tensor",
     batch_paths: Sequence[Path],
@@ -419,6 +421,7 @@ def save_diffuse_batch(
 
         image = TF.to_pil_image(tensor)
         image.save(output_path)
+
 
 def run_model(
     model: "torch.nn.Module",
@@ -463,6 +466,7 @@ def run_model(
         raise KeyError("Model output does not contain 'diffuse'")
 
     return diffuse.clamp(0.0, 1.0)
+
 
 def list_image_paths(root: Path, extensions: Sequence[str]) -> List[Path]:
     """Collect image files under ``root`` matching the provided extensions."""

@@ -7,10 +7,11 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from transformers import AutoImageProcessor, AutoModel
-from models_utils import pixel_mask_to_patch_mask, feather_token_mask,_build
+from models_utils import pixel_mask_to_patch_mask, feather_token_mask, _build
 from logger import get_logger
 
 logger = get_logger(__name__).set_context("MODEL")
+
 
 class DINOv3(nn.Module):
     """
@@ -557,8 +558,6 @@ class DPT_Decoder(nn.Module):
         return rgb_output
 
 
-
-
 class UnReflect_Model(nn.Module):
     """
     RGB with flexible DPT decoders.
@@ -708,7 +707,7 @@ class UnReflect_Model(nn.Module):
                 decoder_name: Optional decoder name for prefix stripping when loading weights
             """
             # DEPRECATED: DINOv3_ConvNext or FiLM confitioning were never used
-            
+
             # if isinstance(dec, (DPT_Decoder, DPT_Decoder_ConvNext, FiLMConditionedDPT)):
             #     return dec
             if isinstance(dec, dict):
@@ -1079,6 +1078,7 @@ class UnReflect_Model(nn.Module):
         rgb_in = self.dinov3.preprocess_image(image)
         tokens_list = self.dinov3(rgb_in)["selected_hidden_states"]
         return tokens_list
+
 
 class UnReflect_Model_TokenInpainter(UnReflect_Model):
     """

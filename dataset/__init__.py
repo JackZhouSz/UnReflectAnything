@@ -34,7 +34,7 @@ from .wrappers import (
     STEREOMIS_TRACKING_Dataset,
     CHOLEC80_Dataset,
     CROMO_Dataset,
-    PSD_Dataset,    
+    PSD_Dataset,
 )
 from .utils import (
     adapt_intrinsics_two_step,

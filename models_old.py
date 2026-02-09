@@ -419,6 +419,7 @@ class DINOv3_ConvNext(nn.Module):
 
         return processed_batch.to(image_tensor.device)
 
+
 class DPTReassembleLayer_ConvNext(nn.Module):
     """
     Reassemble layer for ConvNeXt feature maps (already spatial).
@@ -789,6 +790,7 @@ class DPT_Decoder_ConvNext(nn.Module):
             rgb_output = self.rgb_head_final(x)  # [B, 3, H_target, W_target]
 
         return rgb_output
+
 
 # ---- 1) A FiLM-enabled DPT that can be used for the diffuse/spec decoders ----
 class FiLMConditionedDPT(DPT_Decoder):

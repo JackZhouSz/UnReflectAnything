@@ -4,7 +4,8 @@ import os
 from typing import Optional
 import torch.nn.functional as F
 from pathlib import Path
-from typing import Optional, Union, Any
+from typing import Union, Any
+
 
 class DataParallelWrapper(nn.Module):
     """
@@ -42,6 +43,7 @@ class DataParallelWrapper(nn.Module):
                 ) from None
         return getattr(self.module, name)
 
+
 def _is_instance_or_cfg(x, cls):
     """Return 'instance' if x is an instance of cls, 'cfg' if dict, else raise."""
     if isinstance(x, cls):
@@ -60,6 +62,7 @@ def _build(component, cls):
     if kind == "instance":
         return component
     return cls(component)  # Pass dict as single argument for config-based constructors
+
 
 def get_model_parameter_summary(model):
     """
@@ -500,6 +503,7 @@ def patch_mask_to_pixel_mask(
         )
     return pixel_mask
 
+
 def load_pretrained(
     weights_path: Path,
     config_path: Optional[Union[Path, str, dict, Any]] = None,
@@ -529,7 +533,11 @@ def load_pretrained(
         Loaded model in eval mode (e.g. UnReflect_Model_TokenInpainter).
     """
     import torch
-    from utilities.config import create_model_from_config, load_config_from_checkpoint, load_config_from_path_or_dict
+    from utilities.config import (
+        create_model_from_config,
+        load_config_from_checkpoint,
+        load_config_from_path_or_dict,
+    )
     from dotmap import DotMap
 
     weights_path = Path(weights_path).expanduser().resolve()

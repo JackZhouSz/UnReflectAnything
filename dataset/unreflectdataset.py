@@ -11,6 +11,7 @@ from torch.utils.data import Dataset
 
 from logger import get_logger
 from .polarization import PolarizationProcessor
+
 logger = get_logger(__name__).set_context("DATASET")
 
 

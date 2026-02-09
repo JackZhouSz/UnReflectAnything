@@ -7,6 +7,7 @@ from typing import Optional, Union
 
 from os import PathLike
 
+
 def inference(
     input: Union[str, PathLike, Path, "Tensor"],
     output: Optional[Union[str, PathLike, Path]] = None,
@@ -272,11 +273,13 @@ def _inference_files_return_tensors(
 
     return torch.cat(results, dim=0)
 
+
 def parse_cli():
     """Parse command line arguments and YAML file into inference options."""
     import yaml
     import argparse
     from inference import InferenceOptions
+
     parser = argparse.ArgumentParser(
         description="Run UnReflectAnything diffuse inference"
     )
@@ -342,7 +345,9 @@ def parse_cli():
         raise ValueError("output_dir must be provided")
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    print(    "✔️  Configuration loaded",  )
+    print(
+        "✔️  Configuration loaded",
+    )
 
     batch_size = int(raw_options.get("batch_size", 4))
     if batch_size <= 0:

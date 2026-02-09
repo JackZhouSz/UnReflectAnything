@@ -303,7 +303,7 @@ def create_datasets_from_config(
         Dict with keys 'Training', 'Validation', 'Test' (ConcatDataset or None),
         and 'workers' (int).
     """
-    
+
     from dataset.wrappers import (
         SCRREAM_Dataset,
         HOUSECAT6D_Dataset,
@@ -314,6 +314,7 @@ def create_datasets_from_config(
         CROMO_Dataset,
         PSD_Dataset,
     )
+
     try:
         global_config = config
         if dataset_names is None:
@@ -386,8 +387,12 @@ def create_datasets_from_config(
                 "highlight_brightness_threshold": get_config_value(
                     "HIGHLIGHT_BRIGHTNESS_THRESHOLD", 0.93
                 ),
-                "highlight_return_mask": get_config_value("HIGHLIGHT_RETURN_MASK", False),
-                "highlight_return_rect": get_config_value("HIGHLIGHT_RETURN_RECT", False),
+                "highlight_return_mask": get_config_value(
+                    "HIGHLIGHT_RETURN_MASK", False
+                ),
+                "highlight_return_rect": get_config_value(
+                    "HIGHLIGHT_RETURN_RECT", False
+                ),
                 "highlight_return_rect_as_rgb": get_config_value(
                     "HIGHLIGHT_RETURN_RECT_AS_RGB", False
                 ),
@@ -404,12 +409,16 @@ def create_datasets_from_config(
             dataset_val_scenes = dataset_config.get("VAL_SCENES", [])
 
             val_scenes = (
-                global_val_scenes if global_val_scenes is not None else dataset_val_scenes
+                global_val_scenes
+                if global_val_scenes is not None
+                else dataset_val_scenes
             )
 
             if global_train_scenes is not None and len(global_train_scenes) > 0:
                 train_scenes = global_train_scenes
-                logger.info(f"Using global TRAIN_SCENES for {dataset_name}: {train_scenes}")
+                logger.info(
+                    f"Using global TRAIN_SCENES for {dataset_name}: {train_scenes}"
+                )
             elif dataset_train_scenes and len(dataset_train_scenes) > 0:
                 train_scenes = dataset_train_scenes
                 logger.info(
@@ -434,7 +443,9 @@ def create_datasets_from_config(
                 else:
                     logger.warning(f"  ✗ Training dataset for {dataset_name} is empty")
             else:
-                exclude_scenes = val_scenes if val_scenes and len(val_scenes) > 0 else []
+                exclude_scenes = (
+                    val_scenes if val_scenes and len(val_scenes) > 0 else []
+                )
                 train_dataset = dataset_class(exclude=exclude_scenes, **dataset_params)
                 if len(train_dataset) > 0:
                     train_datasets.append(train_dataset)
@@ -458,7 +469,9 @@ def create_datasets_from_config(
                         f"  ✓ Created validation dataset for {dataset_name}: {len(val_dataset)} samples from {len(val_scenes)} scenes"
                     )
                 else:
-                    logger.warning(f"  ✗ Validation dataset for {dataset_name} is empty")
+                    logger.warning(
+                        f"  ✗ Validation dataset for {dataset_name} is empty"
+                    )
             else:
                 logger.warning(f"  ! No validation scenes specified for {dataset_name}")
 
@@ -486,6 +499,7 @@ def create_datasets_from_config(
         logger.warning("Please check your config_train.yaml file structure")
         raise
 
+
 def load_config_from_checkpoint(checkpoint: dict):
     """Extract and normalize configuration information from a checkpoint."""
     from dotmap import DotMap
@@ -503,6 +517,7 @@ def load_config_from_checkpoint(checkpoint: dict):
     if cfg is not None:
         cfg.USE_TORCH_COMPILE = False
     return cfg
+
 
 def load_config_from_path_or_dict(config_path_or_dict):
     """Load DotMap config from a YAML path, a dict, or an existing DotMap."""
@@ -523,6 +538,7 @@ def load_config_from_path_or_dict(config_path_or_dict):
     if not path.exists():
         return None
     return load_and_process_config(config_path=str(path))
+
 
 def load_and_process_config(
     config_path: str,

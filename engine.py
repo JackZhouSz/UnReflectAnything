@@ -667,12 +667,16 @@ class Engine:
             return None
 
         cpu_affinity = os.sched_getaffinity(os.getpid())
-        AUTO_NUM_WORKERS = int(math.floor(0.9 * len(list(cpu_affinity))))
+        if self.config.get("NUM_WORKERS", "auto") == "auto":
+            NUM_WORKERS = int(math.floor(0.9 * len(list(cpu_affinity))))
+        else:
+            NUM_WORKERS = self.config.NUM_WORKERS
+        NUM_WORKERS = int(math.floor(0.9 * len(list(cpu_affinity))))
         # Create dataloader using the initialized parameters
         dataloader = torch.utils.data.DataLoader(
             dataset,
             batch_size=self.batch_size,
-            num_workers=AUTO_NUM_WORKERS
+            num_workers=NUM_WORKERS
             if self.config.NUM_WORKERS == "auto"
             else self.config.NUM_WORKERS,
             drop_last=True,
@@ -781,10 +785,13 @@ class Engine:
                     invert=False,
                 )
 
+                # # Token inpainter ground truth --> REMOVED: Incompatibility with DataParallel
+                # diffuse_teacher_tokens = self.model.extract_tokens(
+                #     sample["diffuse"].to(self.device, non_blocking=True)
+                # )
                 # Token inpainter ground truth
-                diffuse_teacher_tokens = self.model.extract_tokens(
-                    sample["diffuse"].to(self.device, non_blocking=True)
-                )
+                diffuse_teacher_tokens = self.model(sample["diffuse"].to(self.device, non_blocking=True), just_extract_tokens=True)
+                
                 ### Constructing ground truth dict
                 rgb_highlighted = highlight_result["rgb_highlighted"]
 
@@ -818,7 +825,17 @@ class Engine:
                     "inpaint_mask_override": pixel_inpaint_mask,
                     "inpaint_mask_dilation": self.config.INPAINT_MASK_DILATION,
                 }
-                pred_decomposition = self.model(model_input)
+                if self.config.get("USE_DATAPARALLEL", False):
+                    pred_decomposition = self.model(
+                        model_input["rgb"],
+                        model_input["inpaint_mask_override"],
+                        model_input.get(
+                            "inpaint_mask_dilation",
+                            self.config.INPAINT_MASK_DILATION,
+                        ),
+                    )
+                else:
+                    pred_decomposition = self.model(model_input)
 
                 ### COMPUTE LOSS FUNCTION
                 losses = self.loss(
@@ -856,20 +873,24 @@ class Engine:
                             accumulate_gradients=accumulate_gradients,
                             phase=phase,
                             submodules_to_monitor={
-                                "highlight_decoder": self.model.decoders["highlight"]
-                                if "highlight" in self.model.decoders
-                                else None,
-                                "diffuse_decoder": self.model.decoders["diffuse"]
-                                if "diffuse" in self.model.decoders
-                                else None,
-                                "specular_decoder": self.model.decoders["specular"]
-                                if "specular" in self.model.decoders
-                                else None,
-                                "dinov3": self.model.dinov3,
-                                "token_inpaint": getattr(
-                                    self.model, "token_inpaint", None
+                                "highlight_decoder": getattr(
+                                    self.model.module.decoders if getattr(self.config, "USE_DATAPARALLEL", False) else self.model.decoders,
+                                    "highlight", None
                                 ),
-                            },
+                                "diffuse_decoder": getattr(
+                                    self.model.module.decoders if getattr(self.config, "USE_DATAPARALLEL", False) else self.model.decoders,
+                                    "diffuse", None
+                                ),
+                                "specular_decoder": getattr(
+                                    self.model.module.decoders if getattr(self.config, "USE_DATAPARALLEL", False) else self.model.decoders,
+                                    "specular", None
+                                ),
+                                "dinov3": self.model.module.dinov3 if getattr(self.config, "USE_DATAPARALLEL", False) else self.model.dinov3,
+                                "token_inpaint": getattr(
+                                    self.model.module if getattr(self.config, "USE_DATAPARALLEL", False) else self.model,
+                                    "token_inpaint", None
+                                ),
+                            }
                         )
 
                     except Exception as e:
@@ -1347,8 +1368,9 @@ class Engine:
 
     def _save_checkpoint(self, epoch, is_best=False):
         """Save model checkpoint with enhanced state information"""
-        # Save unwrapped state dict when using DataParallel so checkpoints are portable
-        model_for_save = self.model.module if isinstance(self.model, nn.DataParallel) else self.model
+        # Unwrap DataParallel and DictInputAdapter so we save the real model state_dict
+        m = getattr(self.model, "module", self.model)
+        model_for_save = getattr(m, "module", m)
         checkpoint = {
             "epoch": epoch,
             "model_state_dict": model_for_save.state_dict(),
@@ -1742,12 +1764,11 @@ class Engine:
                 checkpoint_path, map_location=self.device, weights_only=False
             )
             state_dict = checkpoint["model_state_dict"]
-            # Load into unwrapped module when DataParallel; strip "module." prefix if checkpoint was saved with DP
-            if isinstance(self.model, nn.DataParallel):
-                state_dict = {k.replace("module.", "", 1) if k.startswith("module.") else k: v for k, v in state_dict.items()}
-                self.model.module.load_state_dict(state_dict)
-            else:
-                self.model.load_state_dict(state_dict)
+            # Strip "module." prefix if checkpoint was saved with DataParallel
+            state_dict = {k.replace("module.", "", 1) if k.startswith("module.") else k: v for k, v in state_dict.items()}
+            # Load into unwrapped real model (DataParallel and/or DictInputAdapter)
+            load_target = getattr(getattr(self.model, "module", self.model), "module", getattr(self.model, "module", self.model))
+            load_target.load_state_dict(state_dict)
             self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
             # Load schedulers if present (support both new and legacy keys)
             try:
@@ -1897,14 +1918,12 @@ class Engine:
             self.logger.error("Failed to load checkpoint data")
             return False
 
-        # Load model state (into unwrapped module when DataParallel)
+        # Load model state into unwrapped real model (DataParallel and/or DictInputAdapter)
         try:
             state_dict = checkpoint_data["model_state_dict"]
-            if isinstance(self.model, nn.DataParallel):
-                state_dict = {k.replace("module.", "", 1) if k.startswith("module.") else k: v for k, v in state_dict.items()}
-                self.model.module.load_state_dict(state_dict)
-            else:
-                self.model.load_state_dict(state_dict)
+            state_dict = {k.replace("module.", "", 1) if k.startswith("module.") else k: v for k, v in state_dict.items()}
+            load_target = getattr(getattr(self.model, "module", self.model), "module", getattr(self.model, "module", self.model))
+            load_target.load_state_dict(state_dict)
             self.logger.info("Loaded model state from checkpoint", context="RESUME")
         except Exception as e:
             self.logger.error(f"Failed to load model state: {e}")

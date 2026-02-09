@@ -21,6 +21,7 @@ from logger import get_logger
 import models
 from utilities import *
 import utilities.engine_initializers as initialize
+from models_utils import DictInputAdapter
 
 logger = get_logger(__name__).set_context("IMPORT")
 
@@ -243,11 +244,15 @@ def create_model_from_config(
 
 def maybe_wrap_data_parallel(model: torch.nn.Module, config: DotMap):
     """
-    Wrap model in nn.DataParallel when config.USE_DATAPARALLEL is True and multiple GPUs are available.
-    No-op otherwise. Call after create_model_from_config when using multi-GPU DataParallel.
+    When config.USE_DATAPARALLEL is True and CUDA is available: wrap model in DictInputAdapter
+    (so forward receives scatterable args). When multiple GPUs are available, wrap in nn.DataParallel.
+    No-op otherwise.
     """
-    if config.get("USE_DATAPARALLEL", False) and torch.cuda.is_available() and torch.cuda.device_count() > 1:
-        return torch.nn.DataParallel(model)
+    if not config.get("USE_DATAPARALLEL", False) or not torch.cuda.is_available():
+        return model
+    model = DictInputAdapter(model)
+    if torch.cuda.device_count() > 1:
+        model = torch.nn.DataParallel(model)
     return model
 
 

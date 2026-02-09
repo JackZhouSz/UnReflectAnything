@@ -299,7 +299,7 @@ class DINOv3_ConvNext(nn.Module):
             "freeze_backbone": True,
             "return_last_hidden_state": True,
             "return_all_hidden_states": False,
-            "return_selected_layers": [1,2,3,4],
+            "return_selected_layers": [1, 2, 3, 4],
             "return_patch_tokens_only": True,
             "return_as_feature_maps": True,  # Default True for ConvNeXt (native format)
             "return_cls_token": False,
@@ -307,7 +307,7 @@ class DINOv3_ConvNext(nn.Module):
             **config,  # Override defaults with user config
         }
         # Override defaults with user config
-        self.config["return_selected_layers"] = [1,2,3,4]
+        self.config["return_selected_layers"] = [1, 2, 3, 4]
         # DINOv3 ConvNeXt backbone
         self.dinov3 = AutoModel.from_pretrained(self.config["model_name"])
         self.processor = AutoImageProcessor.from_pretrained(self.config["model_name"])
@@ -415,10 +415,10 @@ class DINOv3_ConvNext(nn.Module):
             # Vectorized sampling of 4 corner locations: top-left, top-right, bottom-left, bottom-right
             corners = torch.stack(
                 [
-                    feature_maps[:, :, 0, 0],      # top-left
-                    feature_maps[:, :, 0, W - 1],   # top-right
-                    feature_maps[:, :, H - 1, 0],   # bottom-left
-                    feature_maps[:, :, H - 1, W - 1], # bottom-right
+                    feature_maps[:, :, 0, 0],  # top-left
+                    feature_maps[:, :, 0, W - 1],  # top-right
+                    feature_maps[:, :, H - 1, 0],  # bottom-left
+                    feature_maps[:, :, H - 1, W - 1],  # bottom-right
                 ],
                 dim=1,
             )  # [B, 4, C]
@@ -430,7 +430,9 @@ class DINOv3_ConvNext(nn.Module):
                 return feature_maps[:, :4, :]  # [B, 4, C]
             else:
                 # Pad with zeros if we have fewer than 4 tokens
-                padding = torch.zeros(B, 4 - N, C, device=feature_maps.device, dtype=feature_maps.dtype)
+                padding = torch.zeros(
+                    B, 4 - N, C, device=feature_maps.device, dtype=feature_maps.dtype
+                )
                 return torch.cat([feature_maps, padding], dim=1)  # [B, 4, C]
         else:
             raise ValueError(
@@ -447,7 +449,7 @@ class DINOv3_ConvNext(nn.Module):
 
         Returns:
             dict containing requested outputs based on config:
-                - 'last_hidden_state': [B, C, H', W'] (if return_as_feature_maps=True) 
+                - 'last_hidden_state': [B, C, H', W'] (if return_as_feature_maps=True)
                                       or [B, H'*W', C] (if return_as_feature_maps=False)
                 - 'cls_token': [B, C] - Global pooled features (CLS-like token)
                 - 'register_tokens': [B, 4, C] - Sampled corner features (for compatibility)
@@ -483,15 +485,18 @@ class DINOv3_ConvNext(nn.Module):
         result = {}
 
         # Get last hidden state - could be [B, C, H', W'] or [B, N, C] depending on model
-        if not hasattr(outputs, "last_hidden_state") or outputs.last_hidden_state is None:
+        if (
+            not hasattr(outputs, "last_hidden_state")
+            or outputs.last_hidden_state is None
+        ):
             raise ValueError(
                 "Model did not return last_hidden_state. Check model output structure."
             )
         last_hidden = outputs.last_hidden_state
-        
+
         # Detect the format of the output
         is_spatial = len(last_hidden.shape) == 4  # [B, C, H, W]
-        is_tokens = len(last_hidden.shape) == 3   # [B, N, C]
+        is_tokens = len(last_hidden.shape) == 3  # [B, N, C]
 
         # Return last hidden state
         if self.config["return_last_hidden_state"]:
@@ -505,10 +510,12 @@ class DINOv3_ConvNext(nn.Module):
                     # Try to infer spatial dimensions from input size
                     # For ConvNeXt, typically N = (H/patch_size) * (W/patch_size)
                     # We'll reshape assuming square patches
-                    spatial_size = int(N ** 0.5)
+                    spatial_size = int(N**0.5)
                     if spatial_size * spatial_size == N:
                         # Perfect square - reshape to spatial
-                        result["last_hidden_state"] = last_hidden.transpose(1, 2).view(B, C, spatial_size, spatial_size)
+                        result["last_hidden_state"] = last_hidden.transpose(1, 2).view(
+                            B, C, spatial_size, spatial_size
+                        )
                     else:
                         # Not a perfect square, keep as tokens but warn
                         result["last_hidden_state"] = last_hidden
@@ -527,9 +534,7 @@ class DINOv3_ConvNext(nn.Module):
 
         # Return register tokens (corner sampling)
         if self.config["return_register_tokens"]:
-            register_tokens = self.extract_register_tokens(
-                last_hidden
-            )  # [B, 4, C]
+            register_tokens = self.extract_register_tokens(last_hidden)  # [B, 4, C]
             result["register_tokens"] = register_tokens
 
         # Return all hidden states
@@ -551,10 +556,12 @@ class DINOv3_ConvNext(nn.Module):
                         # It's tokens [B, N, C], convert to spatial
                         B, N, C = h.shape
                         # Infer spatial dimensions assuming square patches
-                        spatial_size = int(N ** 0.5)
+                        spatial_size = int(N**0.5)
                         if spatial_size * spatial_size == N:
                             # Perfect square - reshape to spatial
-                            h_spatial = h.transpose(1, 2).view(B, C, spatial_size, spatial_size)
+                            h_spatial = h.transpose(1, 2).view(
+                                B, C, spatial_size, spatial_size
+                            )
                             converted_hidden.append(h_spatial)
                         else:
                             # Not a perfect square, use patch dimensions
@@ -620,10 +627,12 @@ class DINOv3_ConvNext(nn.Module):
                         # It's tokens [B, N, C], convert to spatial
                         B, N, C = h.shape
                         # Infer spatial dimensions assuming square patches
-                        spatial_size = int(N ** 0.5)
+                        spatial_size = int(N**0.5)
                         if spatial_size * spatial_size == N:
                             # Perfect square - reshape to spatial
-                            h_spatial = h.transpose(1, 2).view(B, C, spatial_size, spatial_size)
+                            h_spatial = h.transpose(1, 2).view(
+                                B, C, spatial_size, spatial_size
+                            )
                             converted_hidden.append(h_spatial)
                         else:
                             # Not a perfect square, use patch dimensions
@@ -784,7 +793,7 @@ class DPTFeatureFusionBlock(nn.Module):
             nn.Conv2d(
                 out_channels, out_channels, kernel_size=3, padding=1, bias=not use_bn
             ),
-            nn.BatchNorm2d(out_channels) if use_bn else nn.Identity(),  
+            nn.BatchNorm2d(out_channels) if use_bn else nn.Identity(),
         )
 
         self.relu = nn.ReLU(inplace=True)
@@ -1097,7 +1106,7 @@ class DPT_Decoder_ConvNext(nn.Module):
         self.config = {**default_config, **(config or {})}
         self.config["feature_dim"] = [192, 384, 768, 1536]
         self.out_image_size = self.config["output_image_size"]
-        
+
         # Handle feature_dim: can be int (same for all) or list (per-stage)
         feature_dim = self.config["feature_dim"]
         if isinstance(feature_dim, int):
@@ -1115,7 +1124,7 @@ class DPT_Decoder_ConvNext(nn.Module):
             raise TypeError(
                 f"feature_dim must be int or list/tuple, got {type(feature_dim)}"
             )
-        
+
         # Create reassemble layers for multi-scale feature extraction
         self.reassemble_layers = nn.ModuleList(
             [
@@ -1195,17 +1204,19 @@ class DPT_Decoder_ConvNext(nn.Module):
             rgb_output: [B, 3, H, W] - RGB image in [0, 1] range
         """
         input_height, input_width = self.out_image_size
-        
+
         # Validate input
         if len(hidden_states) != len(self.reassemble_layers):
             raise ValueError(
                 f"Expected {len(self.reassemble_layers)} hidden states, "
                 f"got {len(hidden_states)}"
             )
-        
+
         # Apply reassemble layers to create multi-scale feature maps
         reassembled_features = []
-        for i, (hidden_state, reassemble) in enumerate(zip(hidden_states, self.reassemble_layers)):
+        for i, (hidden_state, reassemble) in enumerate(
+            zip(hidden_states, self.reassemble_layers)
+        ):
             # Verify channel dimension matches
             actual_channels = hidden_state.shape[1]
             expected_channels = reassemble.in_channels
@@ -1226,11 +1237,11 @@ class DPT_Decoder_ConvNext(nn.Module):
 
         # Progressive fusion from smallest to largest scale
         # Use actual spatial dimensions from reassembled features to ensure matching
-        
+
         # Start with smallest scale (stage 3)
         fused = self.fusion_blocks[3](reassembled_features[3])  # [B, 256, H3, W3]
         h3, w3 = fused.shape[2], fused.shape[3]
-        
+
         # Interpolate to match stage 2 size
         h2, w2 = reassembled_features[2].shape[2], reassembled_features[2].shape[3]
         fused = F.interpolate(
@@ -1238,16 +1249,20 @@ class DPT_Decoder_ConvNext(nn.Module):
         )  # [B, 256, H2, W2]
 
         # Add stage 2 features
-        stage2_fused = self.fusion_blocks[2](reassembled_features[2])  # [B, 256, H2, W2]
+        stage2_fused = self.fusion_blocks[2](
+            reassembled_features[2]
+        )  # [B, 256, H2, W2]
         # Ensure spatial dimensions match (should already match, but be safe)
         if fused.shape[2:] != stage2_fused.shape[2:]:
             stage2_fused = F.interpolate(
-                stage2_fused, size=(fused.shape[2], fused.shape[3]), 
-                mode="bilinear", align_corners=True
+                stage2_fused,
+                size=(fused.shape[2], fused.shape[3]),
+                mode="bilinear",
+                align_corners=True,
             )
         fused = fused + stage2_fused  # [B, 256, H2, W2]
         fused = self.drop2d(fused)
-        
+
         # Interpolate to match stage 1 size
         h1, w1 = reassembled_features[1].shape[2], reassembled_features[1].shape[3]
         fused = F.interpolate(
@@ -1255,16 +1270,20 @@ class DPT_Decoder_ConvNext(nn.Module):
         )  # [B, 256, H1, W1]
 
         # Add stage 1 features
-        stage1_fused = self.fusion_blocks[1](reassembled_features[1])  # [B, 256, H1, W1]
+        stage1_fused = self.fusion_blocks[1](
+            reassembled_features[1]
+        )  # [B, 256, H1, W1]
         # Ensure spatial dimensions match
         if fused.shape[2:] != stage1_fused.shape[2:]:
             stage1_fused = F.interpolate(
-                stage1_fused, size=(fused.shape[2], fused.shape[3]), 
-                mode="bilinear", align_corners=True
+                stage1_fused,
+                size=(fused.shape[2], fused.shape[3]),
+                mode="bilinear",
+                align_corners=True,
             )
         fused = fused + stage1_fused  # [B, 256, H1, W1]
         fused = self.drop2d(fused)
-        
+
         # Interpolate to match stage 0 size
         h0, w0 = reassembled_features[0].shape[2], reassembled_features[0].shape[3]
         fused = F.interpolate(
@@ -1272,51 +1291,58 @@ class DPT_Decoder_ConvNext(nn.Module):
         )  # [B, 256, H0, W0]
 
         # Add stage 0 features
-        stage0_fused = self.fusion_blocks[0](reassembled_features[0])  # [B, 256, H0, W0]
+        stage0_fused = self.fusion_blocks[0](
+            reassembled_features[0]
+        )  # [B, 256, H0, W0]
         # Ensure spatial dimensions match
         if fused.shape[2:] != stage0_fused.shape[2:]:
             stage0_fused = F.interpolate(
-                stage0_fused, size=(fused.shape[2], fused.shape[3]), 
-                mode="bilinear", align_corners=True
+                stage0_fused,
+                size=(fused.shape[2], fused.shape[3]),
+                mode="bilinear",
+                align_corners=True,
             )
         fused = fused + stage0_fused  # [B, 256, H0, W0]
         fused = self.drop2d(fused)
-        
+
         # Apply RGB head with progressive upsampling to avoid large intermediate tensors
         # Calculate target size early to do progressive upsampling
         target_size = self.config["output_image_size"] or (input_height, input_width)
         target_h, target_w = target_size
-        
+
         # Stage 1: Process at current resolution
         x = self.rgb_head_stage1(fused)  # [B, 128, H, W]
-        
+
         # Progressive upsampling: process at lower resolution first, then upsample
         # This avoids creating huge intermediate tensors
         # Calculate safe intermediate size (max 896x896 to avoid INT_MAX issues with batch_size=32)
         max_safe_size = 896
         current_h, current_w = x.shape[2], x.shape[3]
-        
+
         # If target is very large, process at intermediate size first
         if target_h > max_safe_size or target_w > max_safe_size:
             # Process stage 2 at current or intermediate size
             intermediate_h = min(max_safe_size, max(current_h * 2, target_h // 2))
             intermediate_w = min(max_safe_size, max(current_w * 2, target_w // 2))
-            
+
             # Upsample to intermediate size if needed
             if x.shape[2:] != (intermediate_h, intermediate_w):
                 x = F.interpolate(
-                    x, size=(intermediate_h, intermediate_w), mode="bilinear", align_corners=True
+                    x,
+                    size=(intermediate_h, intermediate_w),
+                    mode="bilinear",
+                    align_corners=True,
                 )
-            
+
             # Stage 2: Process at intermediate size
             x = self.rgb_head_stage2(x)  # [B, 64, H_intermediate, W_intermediate]
-            
+
             # Stage 3: Process at intermediate size
             x = self.rgb_head_stage3(x)  # [B, 32, H_intermediate, W_intermediate]
-            
+
             # Final RGB projection at intermediate size
             x = self.rgb_head_final(x)  # [B, 3, H_intermediate, W_intermediate]
-            
+
             # Final upsample to target size
             rgb_output = F.interpolate(
                 x, size=(target_h, target_w), mode="bilinear", align_corners=True
@@ -1328,13 +1354,13 @@ class DPT_Decoder_ConvNext(nn.Module):
                 x = F.interpolate(
                     x, size=(target_h, target_w), mode="bilinear", align_corners=True
                 )
-            
+
             # Stage 2: Process
             x = self.rgb_head_stage2(x)  # [B, 64, H_target, W_target]
-            
+
             # Stage 3: Process
             x = self.rgb_head_stage3(x)  # [B, 32, H_target, W_target]
-            
+
             # Final RGB projection
             rgb_output = self.rgb_head_final(x)  # [B, 3, H_target, W_target]
 
@@ -1391,7 +1417,7 @@ class UnReflect_Model(nn.Module):
         encoder_lr = None
         if isinstance(dinov3, dict):
             encoder_lr = dinov3.get("encoder_lr", dinov3.get("RGB_ENCODER_LR", None))
-        
+
         # Accept either an instance or a DINOv3(**cfg) / DINOv3_ConvNext(**cfg) dict
         if is_convnext:
             self.dinov3 = _build(dinov3, DINOv3_ConvNext)
@@ -1429,7 +1455,9 @@ class UnReflect_Model(nn.Module):
                 if hasattr(model_config, "hidden_sizes"):
                     all_feature_dims = list(model_config.hidden_sizes)
                     # Get selected layers to match feature dimensions
-                    selected_layers = self.dinov3.config.get("return_selected_layers", None)
+                    selected_layers = self.dinov3.config.get(
+                        "return_selected_layers", None
+                    )
                     if selected_layers is not None and len(selected_layers) > 0:
                         # Map selected layer indices to feature dimensions
                         # Note: hidden_sizes might include initial embedding, so we need to map correctly
@@ -1441,10 +1469,14 @@ class UnReflect_Model(nn.Module):
                             max_layer = max(selected_layers)
                             if max_layer < len(all_feature_dims):
                                 # Use feature dimensions corresponding to selected layers
-                                convnext_feature_dims = [all_feature_dims[i] for i in selected_layers]
+                                convnext_feature_dims = [
+                                    all_feature_dims[i] for i in selected_layers
+                                ]
                             else:
                                 # Fallback: use last N dimensions
-                                convnext_feature_dims = all_feature_dims[-len(selected_layers):]
+                                convnext_feature_dims = all_feature_dims[
+                                    -len(selected_layers) :
+                                ]
                         else:
                             # Not enough stages, use what we have
                             convnext_feature_dims = all_feature_dims
@@ -1490,12 +1522,11 @@ class UnReflect_Model(nn.Module):
                 decoder_lr = dec.get("decoder_lr", dec.get("DECODER_LR", None))
                 # Extract selective freezing parameters (before building config)
                 num_fusion_blocks_trainable = dec.get(
-                    "num_fusion_blocks_trainable", 
-                    dec.get("NUM_FUSION_BLOCKS_TRAINABLE", None)
+                    "num_fusion_blocks_trainable",
+                    dec.get("NUM_FUSION_BLOCKS_TRAINABLE", None),
                 )
                 train_rgb_head = dec.get(
-                    "train_rgb_head",
-                    dec.get("TRAIN_RGB_HEAD", None)
+                    "train_rgb_head", dec.get("TRAIN_RGB_HEAD", None)
                 )
                 # Determine whether to build FiLM-conditioned or standard decoder
                 use_film = bool(dec.get("use_film", dec.get("USE_FILM", False)))
@@ -1504,7 +1535,9 @@ class UnReflect_Model(nn.Module):
                 # But allow explicit feature_dim in decoder config to override auto-detection
                 if "feature_dim" in dec or "FEATURE_DIM" in dec:
                     # User explicitly set feature_dim, use it
-                    feature_dim = dec.get("feature_dim", dec.get("FEATURE_DIM", self.embed_dim))
+                    feature_dim = dec.get(
+                        "feature_dim", dec.get("FEATURE_DIM", self.embed_dim)
+                    )
                 elif is_convnext and convnext_feature_dims is not None:
                     # Use auto-detected dimensions
                     feature_dim = convnext_feature_dims
@@ -1592,7 +1625,7 @@ class UnReflect_Model(nn.Module):
                     filtered_state_dict = {}
                     incompatible_keys = []
                     model_state_dict = decoder.state_dict()
-                    
+
                     for key, value in state_dict.items():
                         if key in model_state_dict:
                             model_shape = model_state_dict[key].shape
@@ -1606,40 +1639,58 @@ class UnReflect_Model(nn.Module):
                         else:
                             # Key not in model, skip it
                             pass
-                    
+
                     # Load filtered state dict
                     missing_keys, unexpected_keys = decoder.load_state_dict(
                         filtered_state_dict, strict=False
                     )
-                    
+
                     # Print confirmation about weight loading status
                     total_model_keys = len(model_state_dict)
                     loaded_keys = len(filtered_state_dict)
-                    has_issues = bool(incompatible_keys or missing_keys or unexpected_keys)
-                    
+                    has_issues = bool(
+                        incompatible_keys or missing_keys or unexpected_keys
+                    )
+
                     if not has_issues and loaded_keys == total_model_keys:
-                        logger.info(f"✓ Decoder '{decoder_name}': Successfully loaded all {loaded_keys} state dict keys from {pretrained_path}")
+                        logger.info(
+                            f"✓ Decoder '{decoder_name}': Successfully loaded all {loaded_keys} state dict keys from {pretrained_path}"
+                        )
                     else:
-                        logger.info(f"⚠ Decoder '{decoder_name}': Loaded {loaded_keys}/{total_model_keys} state dict keys from {pretrained_path}")
+                        logger.info(
+                            f"⚠ Decoder '{decoder_name}': Loaded {loaded_keys}/{total_model_keys} state dict keys from {pretrained_path}"
+                        )
                         if incompatible_keys:
-                            logger.info(f"  - {len(incompatible_keys)} keys had incompatible shapes and were skipped")
+                            logger.info(
+                                f"  - {len(incompatible_keys)} keys had incompatible shapes and were skipped"
+                            )
                         if missing_keys:
-                            logger.info(f"  - {len(missing_keys)} keys were missing from checkpoint")
+                            logger.info(
+                                f"  - {len(missing_keys)} keys were missing from checkpoint"
+                            )
                         if unexpected_keys:
-                            logger.info(f"  - {len(unexpected_keys)} unexpected keys in checkpoint")
-                    
+                            logger.info(
+                                f"  - {len(unexpected_keys)} unexpected keys in checkpoint"
+                            )
+
                     # Log warnings about incompatible keys
                     if incompatible_keys:
                         import warnings
+
                         warnings.warn(
                             f"Some weights from {pretrained_path} had incompatible shapes and were skipped:\n"
                             + "\n".join(incompatible_keys[:10])  # Show first 10
-                            + (f"\n... and {len(incompatible_keys) - 10} more" if len(incompatible_keys) > 10 else "")
+                            + (
+                                f"\n... and {len(incompatible_keys) - 10} more"
+                                if len(incompatible_keys) > 10
+                                else ""
+                            )
                             + "\nThis is likely because the pretrained model used different feature_dim values."
                         )
-                    
+
                     if missing_keys:
                         import warnings
+
                         warnings.warn(
                             f"Some keys were missing when loading pretrained decoder from {pretrained_path}: {missing_keys[: min(5, len(missing_keys))]}..."
                         )
@@ -1657,30 +1708,38 @@ class UnReflect_Model(nn.Module):
                 if decoder_lr is not None and decoder_lr == 0.0:
                     for param in decoder.parameters():
                         param.requires_grad = False
-                    decoder.eval()  
+                    decoder.eval()
                     logger.info(
                         f"Decoder '{decoder_name}' frozen due to DECODER_LR=0.0"
                     )
                 else:
                     # Apply selective freezing if parameters are specified
-                    if num_fusion_blocks_trainable is not None or train_rgb_head is not None:
+                    if (
+                        num_fusion_blocks_trainable is not None
+                        or train_rgb_head is not None
+                    ):
                         # If pretrained weights were loaded, we already froze everything above
                         # Otherwise, freeze everything first
                         if not (pretrained_path and pretrained_path != ""):
                             for param in decoder.parameters():
                                 param.requires_grad = False
-                        
+
                         # Then selectively unfreeze based on config
                         # Freeze/unfreeze reassemble layers (typically frozen)
                         for param in decoder.reassemble_layers.parameters():
                             param.requires_grad = False
-                        
+
                         # Handle fusion blocks: train the last N blocks (highest indices)
                         # fusion_blocks[3] is smallest scale, fusion_blocks[0] is largest scale
                         if num_fusion_blocks_trainable is not None:
-                            num_fusion_blocks_trainable = int(num_fusion_blocks_trainable)
+                            num_fusion_blocks_trainable = int(
+                                num_fusion_blocks_trainable
+                            )
                             num_blocks = len(decoder.fusion_blocks)
-                            if num_fusion_blocks_trainable < 0 or num_fusion_blocks_trainable > num_blocks:
+                            if (
+                                num_fusion_blocks_trainable < 0
+                                or num_fusion_blocks_trainable > num_blocks
+                            ):
                                 raise ValueError(
                                     f"NUM_FUSION_BLOCKS_TRAINABLE must be between 0 and {num_blocks}, "
                                     f"got {num_fusion_blocks_trainable}"
@@ -1693,14 +1752,14 @@ class UnReflect_Model(nn.Module):
                                     param.requires_grad = True
                             logger.info(
                                 f"Decoder '{decoder_name}': Training {num_fusion_blocks_trainable} "
-                                f"fusion blocks (indices {start_idx} to {num_blocks-1})"
+                                f"fusion blocks (indices {start_idx} to {num_blocks - 1})"
                             )
                         else:
                             # If not specified, train all fusion blocks
                             for fusion_block in decoder.fusion_blocks:
                                 for param in fusion_block.parameters():
                                     param.requires_grad = True
-                        
+
                         # Handle RGB head
                         if train_rgb_head is not None:
                             train_rgb_head = bool(train_rgb_head)
@@ -1719,25 +1778,29 @@ class UnReflect_Model(nn.Module):
                             else:
                                 # FiLM decoder also has rgb_head
                                 rgb_head_modules = [decoder.rgb_head]
-                            
+
                             for rgb_head_module in rgb_head_modules:
                                 for param in rgb_head_module.parameters():
                                     param.requires_grad = train_rgb_head
-                            
+
                             logger.info(
                                 f"Decoder '{decoder_name}': RGB head trainable = {train_rgb_head}"
                             )
                         else:
                             # If not specified, train RGB head by default
                             if hasattr(decoder, "rgb_head_stage1"):
-                                for module in [decoder.rgb_head_stage1, decoder.rgb_head_stage2, 
-                                             decoder.rgb_head_stage3, decoder.rgb_head_final]:
+                                for module in [
+                                    decoder.rgb_head_stage1,
+                                    decoder.rgb_head_stage2,
+                                    decoder.rgb_head_stage3,
+                                    decoder.rgb_head_final,
+                                ]:
                                     for param in module.parameters():
                                         param.requires_grad = True
                             elif hasattr(decoder, "rgb_head"):
                                 for param in decoder.rgb_head.parameters():
                                     param.requires_grad = True
-                        
+
                         decoder.train()
                         logger.info(
                             f"Decoder '{decoder_name}' selectively frozen/unfrozen"
@@ -1746,7 +1809,7 @@ class UnReflect_Model(nn.Module):
                         # No selective freezing specified, train everything
                         for param in decoder.parameters():
                             param.requires_grad = True
-                        decoder.train()  
+                        decoder.train()
                         # logger.info(
                         #     f"Decoder '{decoder_name}' un-frozen due to DECODER_LR={decoder_lr}"
                         # )
@@ -1818,6 +1881,7 @@ class UnReflect_Model(nn.Module):
         rgb_in = self.dinov3.preprocess_image(image)
         tokens_list = self.dinov3(rgb_in)["selected_hidden_states"]
         return tokens_list
+
 
 class RGBDistillDecomposer(UnReflect_Model):
     def __init__(self):
@@ -1987,7 +2051,7 @@ class UnReflect_Model_FiLMConditioned(UnReflect_Model):
             outputs[name] = dec(tokens_list)
             # outputs["mask_pyr"] = mask_pyr
         return outputs
-    
+
     def extract_tokens(self, image):
         rgb_in = self.dinov3.preprocess_image(image)
         tokens_list = self.dinov3(rgb_in)["selected_hidden_states"]
@@ -2026,12 +2090,14 @@ class UnReflect_Model_TokenInpainter(UnReflect_Model):
         self.token_inpainter_module_name = token_inpainter_cfg.pop(
             "token_inpainter_module", "models"
         )
-        
+
         # Extract pretrained path before filtering (not passed to constructor)
         pretrained_path = token_inpainter_cfg.pop("from_pretrained", "")
 
         # Dynamically import the module
-        token_inpainter_module = importlib.import_module(self.token_inpainter_module_name)
+        token_inpainter_module = importlib.import_module(
+            self.token_inpainter_module_name
+        )
 
         # Get the TokenInpainter class from the module
         TokenInpainterClass = getattr(
@@ -2048,7 +2114,7 @@ class UnReflect_Model_TokenInpainter(UnReflect_Model):
 
         # Instantiate the TokenInpainter with filtered config
         self.token_inpaint = TokenInpainterClass(dim=dim, **filtered_cfg)
-        
+
         # Load pretrained weights if path is specified and not empty
         if pretrained_path and pretrained_path != "":
             if not os.path.exists(pretrained_path):
@@ -2102,7 +2168,7 @@ class UnReflect_Model_TokenInpainter(UnReflect_Model):
             filtered_state_dict = {}
             incompatible_keys = []
             model_state_dict = self.token_inpaint.state_dict()
-            
+
             for key, value in state_dict.items():
                 if key in model_state_dict:
                     model_shape = model_state_dict[key].shape
@@ -2116,50 +2182,73 @@ class UnReflect_Model_TokenInpainter(UnReflect_Model):
                 else:
                     # Key not in model, skip it
                     pass
-            
+
             # Load filtered state dict
             missing_keys, unexpected_keys = self.token_inpaint.load_state_dict(
                 filtered_state_dict, strict=False
             )
-            
+
             # Print confirmation about weight loading status
             total_model_keys = len(model_state_dict)
             loaded_keys = len(filtered_state_dict)
             has_issues = bool(incompatible_keys or missing_keys or unexpected_keys)
-            
+
             if not has_issues and loaded_keys == total_model_keys:
-                logger.info(f"✓ Token Inpainter: Successfully loaded all {loaded_keys} state dict keys from {pretrained_path}")
+                logger.info(
+                    f"✓ Token Inpainter: Successfully loaded all {loaded_keys} state dict keys from {pretrained_path}"
+                )
             else:
-                logger.info(f"⚠ Token Inpainter: Loaded {loaded_keys}/{total_model_keys} state dict keys from {pretrained_path}")
+                logger.info(
+                    f"⚠ Token Inpainter: Loaded {loaded_keys}/{total_model_keys} state dict keys from {pretrained_path}"
+                )
                 if incompatible_keys:
-                    logger.info(f"  - {len(incompatible_keys)} keys had incompatible shapes and were skipped")
+                    logger.info(
+                        f"  - {len(incompatible_keys)} keys had incompatible shapes and were skipped"
+                    )
                 if missing_keys:
-                    logger.info(f"  - {len(missing_keys)} keys were missing from checkpoint")
+                    logger.info(
+                        f"  - {len(missing_keys)} keys were missing from checkpoint"
+                    )
                 if unexpected_keys:
-                    logger.info(f"  - {len(unexpected_keys)} unexpected keys in checkpoint")
-            
+                    logger.info(
+                        f"  - {len(unexpected_keys)} unexpected keys in checkpoint"
+                    )
+
             # Log warnings about incompatible keys
             if incompatible_keys:
                 import warnings
+
                 warnings.warn(
                     f"Some weights from {pretrained_path} had incompatible shapes and were skipped:\n"
                     + "\n".join(incompatible_keys[:10])  # Show first 10
-                    + (f"\n... and {len(incompatible_keys) - 10} more" if len(incompatible_keys) > 10 else "")
+                    + (
+                        f"\n... and {len(incompatible_keys) - 10} more"
+                        if len(incompatible_keys) > 10
+                        else ""
+                    )
                     + "\nThis is likely because the pretrained model used different architecture parameters."
                 )
-            
+
             if missing_keys:
                 logger.warning(
                     f"Missing keys when loading pretrained token inpainter from {pretrained_path}: {missing_keys[:5]}"
-                    + (f" (and {len(missing_keys) - 5} more)" if len(missing_keys) > 5 else "")
+                    + (
+                        f" (and {len(missing_keys) - 5} more)"
+                        if len(missing_keys) > 5
+                        else ""
+                    )
                 )
-            
+
             if unexpected_keys:
                 logger.warning(
-                    f"Unexpected keys when loading pretrained token inpainter from {pretrained_path}: {unexpected_keys[:5]}"    
-                    + (f" (and {len(unexpected_keys) - 5} more)" if len(unexpected_keys) > 5 else "")
+                    f"Unexpected keys when loading pretrained token inpainter from {pretrained_path}: {unexpected_keys[:5]}"
+                    + (
+                        f" (and {len(unexpected_keys) - 5} more)"
+                        if len(unexpected_keys) > 5
+                        else ""
+                    )
                 )
-            
+
             logger.info(
                 f"Loaded pretrained token inpainter weights from {pretrained_path}"
             )
@@ -2169,11 +2258,11 @@ class UnReflect_Model_TokenInpainter(UnReflect_Model):
         tokens_list = self.dinov3(rgb_in)["selected_hidden_states"]
         return tokens_list
 
-    def forward(self, model_input_dict):
+    def forward(self, model_input_dict, just_extract_tokens=False):
         if isinstance(model_input_dict, torch.Tensor):
             model_input_dict = {"rgb": model_input_dict}
             model_input_dict["inpaint_mask_dilation"] = 5
-            
+
         elif isinstance(model_input_dict, dict):
             if "inpaint_mask_dilation" not in model_input_dict:
                 model_input_dict["inpaint_mask_dilation"] = 5
@@ -2182,7 +2271,8 @@ class UnReflect_Model_TokenInpainter(UnReflect_Model):
         tokens_list = self.dinov3(rgb_in)[
             "selected_hidden_states"
         ]  # List[4] of (B,N,C), PATCH TOKENS ONLY
-
+        if just_extract_tokens:
+            return tokens_list
         outputs = {}
 
         ### FIRST: Predict soft highlight mask in image space
@@ -2193,23 +2283,30 @@ class UnReflect_Model_TokenInpainter(UnReflect_Model):
 
         ### SECOND: Construct patch-level mask - From the prediction or override from GT if provided
         # Get the initial mask (GT override if present, else from highlight prediction)
-        pixel_inpaint_mask = model_input_dict.get("inpaint_mask_override", outputs["highlight"])
-        pixel_inpaint_mask = torch.nn.functional.max_pool2d(
-            pixel_inpaint_mask.float(),
-            kernel_size=model_input_dict["inpaint_mask_dilation"],
-            stride=1,
-            padding=model_input_dict["inpaint_mask_dilation"] // 2,
-        ) > 0
+        pixel_inpaint_mask = model_input_dict.get(
+            "inpaint_mask_override", outputs["highlight"]
+        )
+        pixel_inpaint_mask = (
+            torch.nn.functional.max_pool2d(
+                pixel_inpaint_mask.float(),
+                kernel_size=model_input_dict["inpaint_mask_dilation"],
+                stride=1,
+                padding=model_input_dict["inpaint_mask_dilation"] // 2,
+            )
+            > 0
+        )
         patch_inpaint_mask = pixel_mask_to_patch_mask(
             pixel_inpaint_mask,
             patch_size=self.patch_size,
             threshold=0.1,
             invert=False,
-            soft="soft" in self.token_inpainter_class_name.lower()
+            soft="soft" in self.token_inpainter_class_name.lower(),
         )
 
         if "soft" in self.token_inpainter_class_name.lower():
-            patch_inpaint_mask = feather_token_mask(patch_inpaint_mask, radius_tokens=1, smoothstep=True)
+            patch_inpaint_mask = feather_token_mask(
+                patch_inpaint_mask, radius_tokens=1, smoothstep=True
+            )
 
         # 1 if the patch needs to be inpainted, 0 if not
         outputs["patch_mask"] = patch_inpaint_mask
@@ -2217,41 +2314,46 @@ class UnReflect_Model_TokenInpainter(UnReflect_Model):
         ### THIRD: Inpaint the tokens in the mask
         # Detect if using soft masks (float) or boolean masks
         is_soft_mask = patch_inpaint_mask.dtype.is_floating_point
-        
+
         completed_tokens = []  # With gradients - for token loss
         completed_tokens_detached = []  # Detached - for decoders (prevents decoder loss from affecting TokenInpainter)
         for n, T in enumerate(tokens_list):  # (B,N,C)
             # Prepare visibility mask for token inpainter
-            
+
             #### THIS WAS WRONG TokenInpainter expects: True/1.0 = visible/teacher, False/0.0 = masked/inpaint
             if is_soft_mask:
                 visibility_mask = 1.0 - patch_inpaint_mask  # [B, N] float in [0,1]
             else:
                 visibility_mask = torch.logical_not(patch_inpaint_mask)  # [B, N] bool
-            
+
             T_inpainted = self.token_inpaint(T, visibility_mask)
-            
+
             # Blend: keep teacher tokens on context; use predicted tokens on masked patches
             if is_soft_mask:
                 # Soft blending: patch_inpaint_mask=1.0 → use T_inpainted, patch_inpaint_mask=0.0 → use T
-                patch_inpaint_mask_expanded = patch_inpaint_mask.unsqueeze(-1)  # [B, N, 1]
-                T_comp = patch_inpaint_mask_expanded * T_inpainted + (1.0 - patch_inpaint_mask_expanded) * T  # (B,N,C)
+                patch_inpaint_mask_expanded = patch_inpaint_mask.unsqueeze(
+                    -1
+                )  # [B, N, 1]
+                T_comp = (
+                    patch_inpaint_mask_expanded * T_inpainted
+                    + (1.0 - patch_inpaint_mask_expanded) * T
+                )  # (B,N,C)
             else:
                 # Putting the inpainted tokens where the patch_inpaint_mask is 1
                 T_comp = torch.where(
                     patch_inpaint_mask.unsqueeze(-1), T_inpainted, T
                 )  # (B,N,C)
-            
+
             # Store with gradients for token loss
             completed_tokens.append(T_comp)
             # Store detached version for decoders (prevents decoder loss gradients from reaching TokenInpainter)
             completed_tokens_detached.append(T_comp.detach())
-            
+
         # Store tokens_completed WITH gradients for token loss computation
         outputs["tokens_completed"] = completed_tokens
         # Store tokens_inpainted for potential direct supervision (if needed)
         outputs["tokens_inpainted"] = T_inpainted
-        
+
         # 4) Decode with DETACHED completed tokens to prevent decoder loss from affecting TokenInpainter
         for name, dec in self.decoders.items():
             if name == "highlight":

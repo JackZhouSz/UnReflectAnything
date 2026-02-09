@@ -5,6 +5,35 @@ from typing import Optional
 import torch.nn.functional as F
 
 
+class DictInputAdapter(nn.Module):
+    """
+    Adapter so a model that expects forward(model_input_dict) can be wrapped with
+    nn.DataParallel, which scatters tensor arguments (not dicts). The Engine
+    passes (rgb, inpaint_mask_override, inpaint_mask_dilation); this builds the
+    dict and calls the inner module.
+    """
+
+    def __init__(self, module: nn.Module):
+        super().__init__()
+        self.module = module
+
+    def forward(self, rgb, inpaint_mask_override=None, inpaint_mask_dilation=None, just_extract_tokens=False):
+        model_input_dict = {
+            "rgb": rgb,
+            "inpaint_mask_override": inpaint_mask_override,
+            "inpaint_mask_dilation": inpaint_mask_dilation,
+        }
+        return self.module(model_input_dict, just_extract_tokens=just_extract_tokens)
+
+    def __getattr__(self, name):
+        if name == "module":
+            try:
+                return self._modules["module"]
+            except KeyError:
+                raise AttributeError("'DictInputAdapter' object has no attribute 'module'") from None
+        return getattr(self.module, name)
+
+
 def get_model_parameter_summary(model):
     """
     Generate a comprehensive parameter summary for RGBPOLDecomposer or UnReflect_Model models.

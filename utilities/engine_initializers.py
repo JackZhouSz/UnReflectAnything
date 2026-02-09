@@ -17,6 +17,7 @@ import torchvision
 import optimization
 import wandb as weightsandbiases
 from logger import get_logger
+from models_utils import DictInputAdapter
 
 logger = get_logger(__name__)
 
@@ -206,8 +207,10 @@ def optimizers(model, config):
         )
     
     # Build param groups deterministically.
-    # When model is nn.DataParallel, use model.module so parameter names match (no "module." prefix).
+    # Unwrap DataParallel and DictInputAdapter so parameter names match the real model (no "module." prefix).
     effective_model = model.module if isinstance(model, torch.nn.DataParallel) else model
+    if isinstance(effective_model, DictInputAdapter):
+        effective_model = effective_model._modules.get("module", effective_model)
     encoder_params = []
     token_params = []
     decoder_param_groups = {}  # decoder_name -> list of params

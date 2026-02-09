@@ -141,18 +141,12 @@ parameters:
         HIGHLIGHT_RETURN_RECT_AS_RGB: False  # Return highlight rectangle as RGB if True
         HIGHLIGHT_RETURN_RECT: True  # Return highlight rectangle region if True
 
-      # POLARGB:
-      #   TRAIN_SCENES: "train"
-      #   VAL_SCENES: "test"
-      #   TARGET_SIZE: [448,448]
-      #   RESIZE_MODE: "resize+crop"
-      #   SAMPLE_EVERY_N: 1
-      #   LOAD_RGB_ONLY: True
+
 
   BATCH_SIZE: # Max batch size with img size 448 is 32
     value: 16 # Number of samples per batch (adjust based on GPU memory)
   NUM_WORKERS:
-    value: 8  # Number of data loading worker processes (0 = main process only)
+    value: "auto"  # Number of data loading worker processes (0 = main process only, "auto" = 90% of CPU affinity)
   SHUFFLE:
     value: True  # Shuffle training data each epoch (False for validation/test)
   PIN_MEMORY:

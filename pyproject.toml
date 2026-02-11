@@ -41,7 +41,6 @@ dependencies = [
     "lovely-tensors==0.1.21",
     "lpips==0.1.4",
     "matplotlib==3.10.8",
-    "moge",
     "natsort==8.4.0",
     "numpy==2.4.2",
     "pandas==3.0.0",
@@ -83,7 +82,6 @@ publish-url = "https://test.pypi.org/legacy/"
 explicit = true
 
 [tool.uv.sources]
-moge = { git = "https://github.com/microsoft/MoGe.git" }
 transformers = { git = "https://github.com/huggingface/transformers", rev = "2fe43376cdde02b7ffcf117e6eb9aa4375fb2dd1" }
 
 [tool.setuptools]

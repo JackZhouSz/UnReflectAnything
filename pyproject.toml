@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "unreflectanything"
-version = "0.3.1"
+version = "0.3.3"
 description = "Deep learning method for removing specular reflections from RGB images."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -43,6 +43,7 @@ dependencies = [
     "matplotlib==3.10.8",
     "natsort==8.4.0",
     "numpy==2.4.2",
+    "opencv-python==4.13.0.92",
     "pandas==3.0.0",
     "paramiko==4.0.0",
     "pillow==12.1.1",

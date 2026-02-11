@@ -47,12 +47,12 @@ parameters:
         DROP: 0.05 # Dropout rate 
         USE_POSITIONAL_ENCODING: True  # Enable 2D sinusoidal positional encodings
         USE_FINAL_NORM: True  # Enable final LayerNorm before output projection
-        USE_LOCAL_PRIOR: True  # Blend local mean prior for masked seeds
-        LOCAL_PRIOR_WEIGHT: 0.5  # Weight for local prior blending (1.0 = only mask_token, 0.0 = only local mean)
-        LOCAL_PRIOR_KERNEL: 5  # Kernel size for local prior blending (> 1)
+        USE_LOCAL_PRIOR: False  # Blend local mean prior for masked seeds
+        LOCAL_PRIOR_WEIGHT: 0.1  # Weight for local prior blending (1.0 = only mask_token, 0.0 = only local mean)
+        LOCAL_PRIOR_KERNEL: 3  # Kernel size for local prior blending (> 1)
         SEED_NOISE_STD: 0.02  # Standard deviation of noise added to masked seeds during training  
   INPAINT_MASK_DILATION:
-    value: 3  # Dilation kernel size (pixels) for inpaint mask - Must be odd
+    value: 11  # Dilation kernel size (pixels) for inpaint mask - Must be odd
   USE_TORCH_COMPILE:  # Enable PyTorch 2.0 torch.compile for faster training (experimental)
     value: False
   DISTRIBUTE:
@@ -158,7 +158,7 @@ parameters:
   BATCH_SIZE: # Max batch size with img size 896 is 32
     value: 4 # Number of samples per batch (adjust based on GPU memory)
   NUM_WORKERS:
-    value: 16  # Number of data loading worker processes (0 = main process only, "auto" = 90% of CPU affinity)
+    value: 4  # Number of data loading worker processes (0 = main process only, "auto" = 90% of CPU affinity)
   SHUFFLE:
     value: True  # Shuffle training data each epoch (False for validation/test)
   PIN_MEMORY:

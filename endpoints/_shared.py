@@ -47,7 +47,7 @@ def get_cache_dir(subdir: Optional[str] = "") -> Path:
         base = os.environ.get("LOCALAPPDATA", os.path.expanduser("~/.cache"))
     else:
         base = os.environ.get("XDG_CACHE_HOME", os.path.expanduser("~/.cache"))
-    if subdir not in ["weights", "images", "notebooks", "configs"]:
+    if subdir not in ["weights", "images", "notebooks", "configs",""]:
         import warnings
 
         warnings.warn(

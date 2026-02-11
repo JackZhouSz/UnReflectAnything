@@ -110,7 +110,7 @@ py-modules = [
   "models",
   "models_deprecated",
   "models_old",
-  "models_utils",
+  "utilities.model",
   "optimization",
   "polar_highlighter",
   "projections",

@@ -47,7 +47,7 @@ def model(
     """
     from utilities.config import create_model_from_config, load_and_process_config
 
-    from unreflectanything._shared import DEFAULT_WEIGHTS_FILENAME, get_cache_dir
+    from ._shared import DEFAULT_WEIGHTS_FILENAME, get_cache_dir
 
     if config_path is None:
         config_path = (
@@ -115,9 +115,9 @@ class UnReflectModel(_nn_module_base()):
                 "UnReflectModel(pretrained=False) is not supported; use ura.model() to get the class."
             )
         super().__init__()
-        from inference import load_pretrained
+        from utilities.model import load_pretrained
         import os
-        from unreflectanything._shared import (
+        from ._shared import (
             DEFAULT_WEIGHTS_FILENAME,
             get_cache_dir,
             _resolve_device,
@@ -136,10 +136,6 @@ class UnReflectModel(_nn_module_base()):
             raise FileNotFoundError(
                 f"Weights not found at {resolved_weights}. Run 'unreflect download --weights' first."
             )
-
-        default_config_path = (
-            get_cache_dir("weights").parent / "configs" / "pretrained_config.yaml"
-        )
         torch_device = __import__("torch").device(_resolve_device(device))
         inner = load_pretrained(
             weights_path=resolved_weights,
@@ -147,9 +143,6 @@ class UnReflectModel(_nn_module_base()):
             device=str(torch_device),
             strict=False,
             verbose=verbose,
-            default_config_path=default_config_path
-            if default_config_path.exists()
-            else None,
         )
         self._model = inner
         self._device = torch_device

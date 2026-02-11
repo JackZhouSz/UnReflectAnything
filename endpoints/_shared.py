@@ -87,12 +87,13 @@ def download_weights(
         output_dir = Path(output_dir).expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     revision = None if variant == "default" else variant
+    # Only download .pt weight files; skip blobs/ and other repo internals
     snapshot_download(
         repo_id=repo_id,
         local_dir=str(output_dir),
         revision=revision,
         force_download=force,
-        allow_patterns=[f"{WEIGHTS_SUBFOLDER}/*", f"{WEIGHTS_SUBFOLDER}/**/*"],
+        allow_patterns=[f"{WEIGHTS_SUBFOLDER}/*.pt"],
     )
     subfolder_path = output_dir / WEIGHTS_SUBFOLDER
     if subfolder_path.exists() and subfolder_path.is_dir():

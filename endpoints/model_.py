@@ -23,6 +23,7 @@ def model(
     device: str = "cuda",
     config_path: Optional[Union[str, PathLike, Path, dict]] = None,
     verbose: bool = False,
+    skip_path_resolution: bool = False,
 ):
     """Return the model class or a pretrained model instance callable with batched RGB.
 
@@ -67,18 +68,24 @@ def model(
         return create_model_from_config(model_config, device, verbose=verbose)
 
     if weights_path is not None:
-        resolved_weights = Path(weights_path).expanduser().resolve()
+        weights_path_obj = Path(weights_path).expanduser()
+        if not skip_path_resolution:
+            resolved_weights = weights_path_obj.resolve()
+        else:
+            resolved_weights = weights_path_obj
         if not resolved_weights.exists():
             raise FileNotFoundError(
                 f"Weights file not found at '{resolved_weights}'.\n"
                 "Please run 'unreflect download --weights' or unreflectanything.download('weights') first."
             )
+        # Use name from path-as-given so HF cache symlinks (snapshots/... -> blobs/<hash>) don't fail the check
+        name = weights_path_obj.name
         if (
-            DEFAULT_WEIGHTS_FILENAME not in resolved_weights.name
-            and "full_model_weights" not in resolved_weights.name
+            DEFAULT_WEIGHTS_FILENAME not in name
+            and "full_model_weights" not in name
         ):
             raise ValueError(
-                f"Cannot find full model weights in '{resolved_weights}'.\n"
+                f"Cannot find full model weights in '{weights_path_obj}'.\n"
                 "Please run 'unreflect download --weights' or unreflectanything.download('weights') first."
             )
 

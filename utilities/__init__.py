@@ -11,3 +11,4 @@ from .system_ops import *
 from .tensor_utils import *
 from .visualization import *
 from .config import *
+from .model import *

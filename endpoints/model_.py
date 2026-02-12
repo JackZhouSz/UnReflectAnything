@@ -137,9 +137,6 @@ class UnReflectModel(_nn_module_base()):
                 f"Weights not found at {resolved_weights}. Run 'unreflect download --weights' first."
             )
 
-        default_config_path = (
-            get_cache_dir("weights").parent / "configs" / "pretrained_config.yaml"
-        )
         torch_device = __import__("torch").device(_resolve_device(device))
         inner = load_pretrained(
             weights_path=resolved_weights,
@@ -147,9 +144,6 @@ class UnReflectModel(_nn_module_base()):
             device=str(torch_device),
             strict=False,
             verbose=verbose,
-            default_config_path=default_config_path
-            if default_config_path.exists()
-            else None,
         )
         self._model = inner
         self._device = torch_device

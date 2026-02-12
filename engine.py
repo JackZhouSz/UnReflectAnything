@@ -22,7 +22,7 @@ import torchvision.transforms as transforms
 from utilities.visualization import panelize, rgb
 from utilities.ablation import Ablation
 from metrics import mse_metric, psnr_metric, ssim_metric
-from models_utils import pixel_mask_to_patch_mask, patch_mask_to_pixel_mask
+from utilities.model import pixel_mask_to_patch_mask, patch_mask_to_pixel_mask
 
 ablation = Ablation(False)
 

@@ -4,7 +4,7 @@ import yaml
 from dotmap import DotMap
 from torch.utils.data import ConcatDataset
 
-from models_utils import DataParallelWrapper
+from utilities.model import DataParallelWrapper
 import ast
 import importlib
 import time

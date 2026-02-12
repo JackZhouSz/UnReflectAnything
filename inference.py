@@ -20,7 +20,7 @@ from utilities.inference import (
     compute_highlight_mask,
     list_image_paths,
 )
-from utilities.config import load_pretrained
+from utilities.model import load_pretrained
 
 
 @dataclass

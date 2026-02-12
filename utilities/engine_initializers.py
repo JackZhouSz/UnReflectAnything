@@ -17,7 +17,7 @@ import torchvision
 import optimization
 import wandb as weightsandbiases
 from logger import get_logger
-from models_utils import DataParallelWrapper
+from utilities.model import DataParallelWrapper
 
 logger = get_logger(__name__)
 

@@ -23,7 +23,7 @@ parameters:
           DROPOUT: 0.1  # Dropout rate in decoder layers
           OUTPUT_IMAGE_SIZE: [896,896]  # Output image resolution [height, width]
           OUTPUT_CHANNELS: 3  # Number of output channels (3 for RGB diffuse image)
-          DECODER_LR: 0.0 # Custom learning rate for decoder (0.0 = frozen, 1.0 = same as base LR)
+          DECODER_LR: 1.0e-5 # Custom learning rate for decoder (0.0 = frozen, 1.0 = same as base LR)
           NUM_FUSION_BLOCKS_TRAINABLE: 1  # Number of fusion blocks to train (0-4, null = train all if DECODER_LR != 0)
           TRAIN_RGB_HEAD: True  # Whether to train RGB head (true/false, null = train if DECODER_LR != 0)
         highlight:
@@ -35,12 +35,12 @@ parameters:
           DROPOUT: 0.1  # Dropout rate in decoder layers
           OUTPUT_IMAGE_SIZE: [896,896]  # Output image resolution [height, width]
           OUTPUT_CHANNELS: 1  # Number of output channels (1 for highlight mask)
-          DECODER_LR: 5.0e-4  # Custom learning rate for decoder (0.0 = frozen, 1.0 = same as base LR)
+          DECODER_LR: 0.0  # Custom learning rate for decoder (0.0 = frozen, 1.0 = same as base LR)
           NUM_FUSION_BLOCKS_TRAINABLE: null  # Number of fusion blocks to train (0-4, null = train all if DECODER_LR != 0)
       TOKEN_INPAINTER:
         TOKEN_INPAINTER_CLASS: "TokenInpainter_Prior"  # Token inpainter class name
         TOKEN_INPAINTER_MODULE: "token_inpainters"  # Module name to import token inpainter from
-        # FROM_PRETRAINED: "weights/token_inpainter.pth"  # Path to pretrained token inpainter weights (optional)
+        FROM_PRETRAINED: "weights/token_inpainter.pth"  # Path to pretrained token inpainter weights (optional)
         TOKEN_INPAINTER_LR: 1.0e-4  # Learning rate for token inpainter (can differ from base LR)
         DEPTH: 6  # Number of transformer blocks
         HEADS: 16  # Number of attention heads

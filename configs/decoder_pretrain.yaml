@@ -14,7 +14,6 @@ parameters:
         RGB_ENCODER_LR: 0.0  # Learning rate for RGB encoder (0.0 = frozen, must be explicitly set)
       DECODERS:
         diffuse:
-          USE_FILM: False  # Enable FiLM (Feature-wise Linear Modulation) conditioning in decoder
           FEATURE_DIM: 1024  # Feature dimension for decoder (should match encoder output)
           REASSEMBLE_OUT_CHANNELS: [768,1024,1536,2048]  # Output channels for each decoder stage (DPT-style reassembly)
           REASSEMBLE_FACTORS: [4.0, 2.0, 1.0, 0.5]  # Spatial upsampling factors for each stage
@@ -27,7 +26,7 @@ parameters:
           DECODER_LR: 5.0e-5 # Custom learning rate for decoder (0.0 = frozen, 1.0 = same as base LR)
           NUM_FUSION_BLOCKS_TRAINABLE: null  # Number of fusion blocks to train (0-4, null = train all if DECODER_LR != 0)
           TRAIN_RGB_HEAD: True  # Whether to train RGB head (true/false, null = train if DECODER_LR != 0)
-      TOKEN_INPAINTER:
+      TOKEN_INPAINTER: # <<<<<<<<<<<< DOESNT MATTER, MODEL CLASS IS NOT TOKEN INPAINTER
         TOKEN_INPAINTER_CLASS: "TokenInpainter_Prior"  # Token inpainter class name
         TOKEN_INPAINTER_MODULE: "token_inpainters"  # Module name to import token inpainter from
         FROM_PRETRAINED: "weights/token_inpainter.pth"  # Path to pretrained token inpainter weights (optional)
@@ -145,7 +144,7 @@ parameters:
     value: False  # If True, override all datasets' FEW_IMAGES to True (for quick debugging across all datasets)
 
   BATCH_SIZE: # Max batch size with img size 896 is 32
-    value: 20 # Number of samples per batch (adjust based on GPU memory)
+    value: 4 # Number of samples per batch (adjust based on GPU memory)
   NUM_WORKERS:
     value: 12  # Number of data loading worker processes (0 = main process only, "auto" = 90% of CPU affinity)
   SHUFFLE:
@@ -226,6 +225,9 @@ parameters:
     value: 1.0  # Weight for diffuse component reconstruction loss
   HIGHLIGHT_LOSS_WEIGHT:
     value: 0.0  # Weight for highlight mask regression loss
+  TOKEN_INPAINT_LOSS_WEIGHT:
+    value: 0.0  # Weight for token-space inpainting loss (L1 + cosine similarity in feature space)
+
   IMAGE_RECONSTRUCTION_LOSS_WEIGHT:
     value: 0.0  # Weight for full image reconstruction loss
   SATURATION_RING_LOSS_WEIGHT:
@@ -255,8 +257,6 @@ parameters:
   HLREG_FOCAL_GAMMA:
     value: 2.0      # Focal loss gamma parameter (0.0 = standard BCE, 1.0-2.0 helps with gradient vanishing)
   
-  TOKEN_INPAINT_LOSS_WEIGHT:
-    value: 0.0  # Weight for token-space inpainting loss (L1 + cosine similarity in feature space)
   WEIGHT_CONTEXT_IDENTITY: 
     value: 0.0  # LEAVE TO 0.0: Weight for L1 loss on context (non-masked) regions (identity preservation) 
   WEIGHT_TV_IN_HOLE:
@@ -302,5 +302,5 @@ parameters:
   WANDB_PROJECT:
     value: "UnReflectAnything"  # WandB project name
   NOTES:
-    value: "896 Decoder Pretraining"  # Notes/description for this training run
+    value: ""  # Notes/description for this training run
   

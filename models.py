@@ -7,7 +7,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from transformers import AutoImageProcessor, AutoModel
-from models_utils import pixel_mask_to_patch_mask, feather_token_mask, _build
+from utilities.model import pixel_mask_to_patch_mask, feather_token_mask, _build
 from logger import get_logger
 
 logger = get_logger(__name__).set_context("MODEL")

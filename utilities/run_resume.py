@@ -85,7 +85,7 @@ def validate_run_for_resume(run_dir: str) -> Tuple[bool, str, Optional[Dict[str,
         return False, "No config.json or hyperparams.json found in run directory", None
 
     # Check for checkpoints
-    checkpoint_files = glob.glob(os.path.join(models_dir, "checkpoint_epoch_*.pth"))
+    checkpoint_files = glob.glob(os.path.join(models_dir, "checkpoint_epoch_*.pt"))
     best_model_path = os.path.join(models_dir, "full_model_weights.pt")
 
     if not checkpoint_files and not os.path.exists(best_model_path):
@@ -99,7 +99,7 @@ def validate_run_for_resume(run_dir: str) -> Tuple[bool, str, Optional[Dict[str,
         try:
             # Extract epoch number from filename
             filename = os.path.basename(checkpoint_file)
-            epoch_str = filename.replace("checkpoint_epoch_", "").replace(".pth", "")
+            epoch_str = filename.replace("checkpoint_epoch_", "").replace(".pt", "")
             epoch_num = int(epoch_str)
 
             if epoch_num > latest_epoch:
@@ -113,6 +113,14 @@ def validate_run_for_resume(run_dir: str) -> Tuple[bool, str, Optional[Dict[str,
         latest_checkpoint = best_model_path
         # Try to get epoch from best model
         try:
+            if not os.path.exists(best_model_path):
+                if best_model_path.endswith(".pt"):
+                    alt_best_model_path = best_model_path[:-3] + ".pth"
+                elif best_model_path.endswith(".pth"):
+                    alt_best_model_path = best_model_path[:-4] + ".pt"
+                    alt_best_model_path = None
+                if alt_best_model_path and os.path.exists(alt_best_model_path):
+                    best_model_path = alt_best_model_path
             checkpoint = torch.load(
                 best_model_path, map_location="cpu", weights_only=False
             )
@@ -148,6 +156,14 @@ def load_checkpoint_for_resume(
         Optional[Dict]: Checkpoint data if successful, None otherwise
     """
     try:
+        if not os.path.exists(checkpoint_path):
+            if checkpoint_path.endswith(".pt"):
+                alt_checkpoint_path = checkpoint_path[:-3] + ".pth"
+            elif checkpoint_path.endswith(".pth"):
+                alt_checkpoint_path = checkpoint_path[:-4] + ".pt"
+                alt_checkpoint_path = None
+            if alt_checkpoint_path and os.path.exists(alt_checkpoint_path):
+                checkpoint_path = alt_checkpoint_path
         checkpoint = torch.load(
             checkpoint_path, map_location=device, weights_only=False
         )

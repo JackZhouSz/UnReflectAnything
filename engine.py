@@ -46,7 +46,7 @@ class Engine:
         Initializes the Engine object for polarization-based reflection removal training.
 
         Args:
-            model (nn.Module): The RGBPOLDecomposer model to be trained or model config.
+            model (nn.Module): The model to be trained or model config.
             dataset (dict): Dictionary containing 'training', 'validation', and optionally 'test' datasets.
             config (dict): Dictionary containing config like BATCH_SIZE, LEARNING_RATE, etc.
             notes (str, optional): Additional notes for the training session. Defaults to "".
@@ -1500,13 +1500,13 @@ class Engine:
 
         # Save regular checkpoint
         checkpoint_path = os.path.join(
-            self.MODELS_DIR, f"checkpoint_epoch_{epoch + 1}.pth"
+            self.MODELS_DIR, f"checkpoint_epoch_{epoch + 1}.pt"
         )
         torch.save(checkpoint, checkpoint_path)
 
         # Save best checkpoint
         if is_best:
-            best_path = os.path.join(self.MODELS_DIR, "best_model.pth")
+            best_path = os.path.join(self.MODELS_DIR, "best_model.pt")
             torch.save(checkpoint, best_path)
             self.logger.info(f"Saved best model at epoch {epoch + 1}", context="SAVE")
 
@@ -1840,6 +1840,20 @@ class Engine:
             return
 
         try:
+            if not os.path.exists(checkpoint_path):
+                # Try swapping .pth <-> .pt if file not found
+                if checkpoint_path.endswith(".pt"):
+                    alt_checkpoint_path = checkpoint_path[:-3] + ".pth"
+                elif checkpoint_path.endswith(".pth"):
+                    alt_checkpoint_path = checkpoint_path[:-4] + ".pt"
+                else:
+                    alt_checkpoint_path = None
+
+                if alt_checkpoint_path and os.path.exists(alt_checkpoint_path):
+                    checkpoint_path = alt_checkpoint_path
+                else:
+                    return None
+
             checkpoint = torch.load(
                 checkpoint_path, map_location=self.device, weights_only=False
             )
@@ -1929,6 +1943,20 @@ class Engine:
             return None
 
         try:
+            if not os.path.exists(checkpoint_path):
+                # Try swapping .pth <-> .pt if file not found
+                if checkpoint_path.endswith(".pt"):
+                    alt_checkpoint_path = checkpoint_path[:-3] + ".pth"
+                elif checkpoint_path.endswith(".pth"):
+                    alt_checkpoint_path = checkpoint_path[:-4] + ".pt"
+                else:
+                    alt_checkpoint_path = None
+
+                if alt_checkpoint_path and os.path.exists(alt_checkpoint_path):
+                    checkpoint_path = alt_checkpoint_path
+                else:
+                    return None
+
             checkpoint = torch.load(
                 checkpoint_path, map_location=device, weights_only=False
             )

@@ -1,7 +1,7 @@
 # UnReflectAnything
 
 [![Project](https://img.shields.io/badge/Project-Webpage-ff611b?logo=googlehome&logoColor=ff611b)](https://alberto-rota.github.io/UnReflectAnything/)
-![PyPI](https://img.shields.io/pypi/v/unreflectanything?color=76b1f3&label=pip%20install&logo=python&logoColor=76b1f3)
+[![PyPI](https://img.shields.io/pypi/v/unreflectanything?color=76b1f3&label=pip%20install&logo=python&logoColor=76b1f3)]
 [![Paper](https://img.shields.io/badge/Paper-arXiv-B31B1B?logo=arxiv&logoColor=B31B1B)](https://arxiv.org/abs/2512.09583)
 [![Demo](https://img.shields.io/badge/Demo-HF%20-FFD21E?logo=huggingface&logoColor=FFD21E)](https://huggingface.co/spaces/AlbeRota/UnReflectAnything)
 [![Modelcard](https://img.shields.io/badge/Model%20Card-HF%20-FFD21E?logo=huggingface&logoColor=FFD21E)](https://huggingface.co/AlbeRota/UnReflectAnything)

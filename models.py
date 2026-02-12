@@ -774,6 +774,20 @@ class UnReflect_Model(nn.Module):
                         )
 
                     # Load checkpoint (handle both raw state_dict and checkpoint formats)
+                    if not os.path.exists(pretrained_path):
+                        # Try swapping .pth <-> .pt if file not found
+                        if pretrained_path.endswith(".pt"):
+                            alt_pretrained_path = pretrained_path[:-3] + ".pth"
+                        elif pretrained_path.endswith(".pth"):
+                            alt_pretrained_path = pretrained_path[:-4] + ".pt"
+                        else:
+                            alt_pretrained_path = None
+
+                        if alt_pretrained_path and os.path.exists(alt_pretrained_path):
+                            pretrained_path = alt_pretrained_path
+                        else:
+                            return None
+
                     checkpoint = torch.load(
                         pretrained_path, map_location="cpu", weights_only=False
                     )
@@ -1156,6 +1170,14 @@ class UnReflect_Model_TokenInpainter(UnReflect_Model):
                 )
 
             # Load checkpoint (handle both raw state_dict and checkpoint formats)
+            if not os.path.exists(pretrained_path):
+                if pretrained_path.endswith(".pt"):
+                    alt_pretrained_path = pretrained_path[:-3] + ".pth"
+                elif pretrained_path.endswith(".pth"):
+                    alt_pretrained_path = pretrained_path[:-4] + ".pt"
+                    alt_pretrained_path = None
+                if alt_pretrained_path and os.path.exists(alt_pretrained_path):
+                    pretrained_path = alt_pretrained_path
             checkpoint = torch.load(
                 pretrained_path, map_location="cpu", weights_only=False
             )

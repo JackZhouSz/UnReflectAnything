@@ -66,17 +66,17 @@ def _build(component, cls):
 
 def get_model_parameter_summary(model):
     """
-    Generate a comprehensive parameter summary for RGBPOLDecomposer or UnReflect_Model models.
+    Generate a comprehensive parameter summary for  UnReflect_Model models.
 
     Args:
-        model: RGBPOLDecomposer or UnReflect_Model instance
+        model: UnReflect_Model instance
 
     Returns:
         dict: Detailed parameter summary with counts and breakdowns
     """
-    allowed_types = ("RGBPOLDecomposer", "UnReflect_Model")
+    allowed_types = ("UnReflect_Model")
     if model.__class__.__name__ not in allowed_types:
-        raise ValueError("Model must be RGBPOLDecomposer or UnReflect_Model")
+        raise ValueError("Model must UnReflect_Model")
 
     def count_parameters(module, trainable_only=False):
         """Count parameters in a module."""
@@ -319,10 +319,10 @@ def load_best_model_by_run(
     if models_dir is None or not os.path.isdir(models_dir):
         raise FileNotFoundError(f"Models directory not found for run: {run_identifier}")
 
-    # Prefer full_model_weights.pt (EarlyStopping), fallback to best_model.pth (engine best)
+    # Prefer full_model_weights.pt (EarlyStopping), fallback to best_model.pt (engine best)
     candidate_paths = [
         os.path.join(models_dir, "full_model_weights.pt"),
-        os.path.join(models_dir, "best_model.pth"),
+        os.path.join(models_dir, "best_model.pt"),
     ]
     best_ckpt = next((p for p in candidate_paths if os.path.exists(p)), None)
     if best_ckpt is None:
@@ -333,6 +333,15 @@ def load_best_model_by_run(
         print(f"Loading checkpoint from: {best_ckpt}")
 
     # Load checkpoint and reconstruct model from saved config
+    if not os.path.exists(best_ckpt):
+        if best_ckpt.endswith(".pt"):
+            alt_best_ckpt = best_ckpt[:-3] + ".pth"
+        elif best_ckpt.endswith(".pth"):
+            alt_best_ckpt = best_ckpt[:-4] + ".pt"
+            alt_best_ckpt = None
+        if alt_best_ckpt and os.path.exists(alt_best_ckpt):
+            best_ckpt = alt_best_ckpt
+
     checkpoint = torch.load(best_ckpt, map_location=load_device, weights_only=False)
 
     # Prefer config packaged inside checkpoint; else use run's config from resume_info
@@ -546,6 +555,14 @@ def load_pretrained(
 
     if verbose:
         print(f"Loading checkpoint from '{weights_path}' on device '{device}'")
+    if not weights_path.exists():
+        if weights_path.endswith(".pt"):
+            alt_weights_path = weights_path[:-3] + ".pth"
+        elif weights_path.endswith(".pth"):
+            alt_weights_path = weights_path[:-4] + ".pt"
+            alt_weights_path = None
+        if alt_weights_path and os.path.exists(alt_weights_path):
+            weights_path = alt_weights_path
     checkpoint = torch.load(weights_path, map_location="cpu", weights_only=False)
 
     if config_path is None:
@@ -571,7 +588,8 @@ def load_pretrained(
     model = create_model_from_config(config, torch_device, verbose=verbose)
     state_dict = checkpoint.get("model_state_dict")
     if state_dict is None:
-        raise KeyError("Checkpoint does not contain model_state_dict")
+        state_dict = checkpoint
+        # raise KeyError("Checkpoint does not contain model_state_dict")
 
     # Handle checkpoints saved with DataParallel / wrapped module: keys may be prefixed with "module."
     model_keys = set(model.state_dict().keys())
@@ -582,11 +600,28 @@ def load_pretrained(
             print("Checkpoint keys were prefixed with 'module.'; stripped prefix to match model.")
 
     missing, unexpected = model.load_state_dict(state_dict, strict=strict)
+    def top2_levels(key):
+        return ".".join(key.split(".")[:2]) if "." in key else key
+
     if not strict:
         if missing:
-            print(f"Warning: missing keys when loading checkpoint: {missing}")
+            # Show only the top-2 levels for missing keys, and count for each group
+            missing_top2 = [top2_levels(k) for k in missing]
+            from collections import Counter
+            missing_counter = Counter(missing_top2)
+            print(f"Warning: missing keys when loading checkpoint (grouped by top-2 levels):")
+            for k, v in missing_counter.items():
+                print(f"  {k}: {v} key(s) missing")
+            print(f"Total unique top-2-levels for missing keys: {len(missing_counter)}")
         if unexpected:
-            print(f"Warning: unexpected keys when loading checkpoint: {unexpected}")
+            # Show only the top-2 levels for unexpected keys, and count for each group
+            unexpected_top2 = [top2_levels(k) for k in unexpected]
+            from collections import Counter
+            unexpected_counter = Counter(unexpected_top2)
+            print(f"Warning: unexpected keys when loading checkpoint (grouped by top-2 levels):")
+            for k, v in unexpected_counter.items():
+                print(f"  {k}: {v} key(s) unexpected")
+            print(f"Total unique top-2-levels for unexpected keys: {len(unexpected_counter)}")
 
     model.eval()
     if verbose:

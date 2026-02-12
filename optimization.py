@@ -369,6 +369,14 @@ class EarlyStopping:
                 checkpoint_path = tmp_path
 
             # Load state dict
+            if not os.path.exists(checkpoint_path):
+                if checkpoint_path.endswith(".pt"):
+                    alt_checkpoint_path = checkpoint_path[:-3] + ".pth"
+                elif checkpoint_path.endswith(".pth"):
+                    alt_checkpoint_path = checkpoint_path[:-4] + ".pt"
+                    alt_checkpoint_path = None
+                if alt_checkpoint_path and os.path.exists(alt_checkpoint_path):
+                    checkpoint_path = alt_checkpoint_path
             state_dict = torch.load(checkpoint_path)
             model.load_state_dict(state_dict)
             logger.set_context("GCLOUD")

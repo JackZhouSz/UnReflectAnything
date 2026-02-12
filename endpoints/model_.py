@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict, Optional, Union
+from typing import TYPE_CHECKING, Dict, Optional, Union, Any
 
 from os import PathLike
 
@@ -24,6 +24,8 @@ def model(
     config_path: Optional[Union[str, PathLike, Path, dict]] = None,
     verbose: bool = False,
     skip_path_resolution: bool = False,
+    config: Optional[Union[dict, Any]] = None,
+    weights: Optional[Union[str, PathLike, Path, dict, Any]] = None,
 ):
     """Return the model class or a pretrained model instance callable with batched RGB.
 
@@ -35,10 +37,15 @@ def model(
             If True, return an ``UnReflectModel`` instance with weights loaded,
             which you can call with a batched RGB tensor.
         weights_path: Path to checkpoint. Only used when pretrained=True.
-            Defaults to cache (~/.cache/unreflectanything/weights/full_model_weights.pt).
+            Ignored if ``weights`` is provided.
+        weights: Optional weights: path to ``.pt``/``.pt`` file, or in-memory state dict.
+            If provided, overrides ``weights_path``. Path operations apply only when it is a path.
         device: Device to load the model on when pretrained=True.
-        config_path: Optional config source (YAML path or dict) for architecture when
-            loading from checkpoint. Only used when pretrained=True.
+        config_path: Optional config source (YAML path) for architecture when
+            loading from checkpoint. Only used when pretrained=True and ignored
+            if ``config`` is provided.
+        config: Optional in-memory configuration (dict or DotMap). If provided,
+            this overrides ``config_path`` and is passed directly to the factory.
         verbose: If True, print progress information.
 
     Returns:
@@ -46,52 +53,78 @@ def model(
         If pretrained=True: an ``UnReflectModel`` instance (nn.Module) that can
         be called with ``model(images)`` where images is [B, 3, H, W].
     """
-    from utilities.config import create_model_from_config, load_and_process_config
+    from utilities.config import (
+        create_model_from_config,
+        load_and_process_config,
+        load_config_from_path_or_dict,
+    )
 
-    from ._shared import DEFAULT_WEIGHTS_FILENAME, get_cache_dir
+    from ._shared import DEFAULT_WEIGHTS_FILENAME, get_cache_dir, _resolve_device
 
-    if config_path is None:
-        config_path = (
-            get_cache_dir("weights").parent / "configs" / "pretrained_config.yaml"
-        )
-    if (
-        config_path is not None
-        and hasattr(config_path, "is_dir")
-        and getattr(config_path, "is_dir")()
-    ):
-        config_path = Path(config_path) / "pretrained_config.yaml"
-    model_config = load_and_process_config(str(config_path))
-    if verbose:
-        print(f"Loaded model configuration from: `{config_path}`")
+    if config is not None:
+        # Direct config (dict or DotMap) takes precedence; normalize to DotMap and set USE_TORCH_COMPILE=False
+        model_config = load_config_from_path_or_dict(config)
+        if model_config is None:
+            raise ValueError("config could not be normalized (expected dict or DotMap).")
+        if verbose:
+            print("Using provided in-memory config (dict / DotMap).")
+    else:
+        if config_path is None:
+            config_path = (
+                get_cache_dir("weights").parent / "configs" / "pretrained_config.yaml"
+            )
+        if (
+            config_path is not None
+            and hasattr(config_path, "is_dir")
+            and getattr(config_path, "is_dir")()
+        ):
+            config_path = Path(config_path) / "pretrained_config.yaml"
+        model_config = load_and_process_config(str(config_path))
+        if verbose:
+            print(f"Loaded model configuration from: `{config_path}`")
 
     if not pretrained:
-        return create_model_from_config(model_config, device, verbose=verbose)
+        import torch
+        torch_device = torch.device(_resolve_device(device))
+        return create_model_from_config(model_config, torch_device, verbose=verbose)
 
-    if weights_path is not None:
-        weights_path_obj = Path(weights_path).expanduser()
-        if not skip_path_resolution:
-            resolved_weights = weights_path_obj.resolve()
+    # Weights: either path (str/Path) or in-memory state dict. Path ops only when path-like.
+    chosen_weights = weights if weights is not None else weights_path
+
+    def _is_path_like(x):
+        return isinstance(x, (str, Path)) or getattr(x, "__fspath__", None) is not None
+
+    weights_path_for_model = None
+    state_dict_for_model = None
+    if chosen_weights is not None:
+        if _is_path_like(chosen_weights):
+            weights_path_obj = Path(chosen_weights).expanduser()
+            if not skip_path_resolution:
+                resolved_weights = weights_path_obj.resolve()
+            else:
+                resolved_weights = weights_path_obj
+            if not resolved_weights.exists():
+                raise FileNotFoundError(
+                    f"Weights file not found at '{resolved_weights}'.\n"
+                    "Please run 'unreflect download --weights' or unreflectanything.download('weights') first."
+                )
+            name = weights_path_obj.name
+            if (
+                DEFAULT_WEIGHTS_FILENAME not in name
+                and "full_model_weights" not in name
+            ):
+                raise ValueError(
+                    f"Cannot find full model weights in '{weights_path_obj}'.\n"
+                    "Please run 'unreflect download --weights' or unreflectanything.download('weights') first."
+                )
+            weights_path_for_model = resolved_weights
         else:
-            resolved_weights = weights_path_obj
-        if not resolved_weights.exists():
-            raise FileNotFoundError(
-                f"Weights file not found at '{resolved_weights}'.\n"
-                "Please run 'unreflect download --weights' or unreflectanything.download('weights') first."
-            )
-        # Use name from path-as-given so HF cache symlinks (snapshots/... -> blobs/<hash>) don't fail the check
-        name = weights_path_obj.name
-        if (
-            DEFAULT_WEIGHTS_FILENAME not in name
-            and "full_model_weights" not in name
-        ):
-            raise ValueError(
-                f"Cannot find full model weights in '{weights_path_obj}'.\n"
-                "Please run 'unreflect download --weights' or unreflectanything.download('weights') first."
-            )
+            state_dict_for_model = chosen_weights
 
     return UnReflectModel(
         pretrained=True,
-        weights_path=weights_path,
+        weights_path=weights_path_for_model,
+        state_dict=state_dict_for_model,
         device=device,
         config_path=model_config,
         verbose=verbose,
@@ -116,13 +149,13 @@ class UnReflectModel(_nn_module_base()):
         device: str = "cuda",
         config_path: Optional[Union[str, PathLike, Path, dict]] = None,
         verbose: bool = False,
+        state_dict: Optional[Union[dict, Any]] = None,
     ):
         if not pretrained:
             raise ValueError(
                 "UnReflectModel(pretrained=False) is not supported; use ura.model() to get the class."
             )
         super().__init__()
-        from utilities.model import load_pretrained
         import os
         from ._shared import (
             DEFAULT_WEIGHTS_FILENAME,
@@ -130,28 +163,51 @@ class UnReflectModel(_nn_module_base()):
             _resolve_device,
         )
 
-        if weights_path is None:
-            resolved_weights = get_cache_dir("weights") / DEFAULT_WEIGHTS_FILENAME
-        elif os.path.isdir(weights_path):
-            resolved_weights = (
-                Path(weights_path).expanduser().resolve() / DEFAULT_WEIGHTS_FILENAME
-            )
-        else:
-            resolved_weights = Path(weights_path).expanduser().resolve()
-
-        if not resolved_weights.exists():
-            raise FileNotFoundError(
-                f"Weights not found at {resolved_weights}. Run 'unreflect download --weights' first."
-            )
-
         torch_device = __import__("torch").device(_resolve_device(device))
-        inner = load_pretrained(
-            weights_path=resolved_weights,
-            config_path=config_path,
-            device=str(torch_device),
-            strict=False,
-            verbose=verbose,
-        )
+
+        if state_dict is not None:
+            from utilities.config import create_model_from_config
+
+            inner = create_model_from_config(
+                config_path, torch_device, verbose=verbose
+            )
+            sd = state_dict.get("model_state_dict", state_dict) if isinstance(state_dict, dict) else state_dict
+            if isinstance(sd, dict) and sd:
+                model_keys = set(inner.state_dict().keys())
+                ckpt_keys = set(sd.keys())
+                if ckpt_keys and not (model_keys & ckpt_keys) and all(
+                    k.startswith("module.") for k in ckpt_keys
+                ):
+                    sd = {k.removeprefix("module."): v for k, v in sd.items()}
+                    if verbose:
+                        print("State dict keys were prefixed with 'module.'; stripped to match model.")
+            inner.load_state_dict(sd, strict=False)
+            inner.eval()
+        else:
+            from utilities.model import load_pretrained
+
+            if weights_path is None:
+                resolved_weights = get_cache_dir("weights") / DEFAULT_WEIGHTS_FILENAME
+            elif os.path.isdir(weights_path):
+                resolved_weights = (
+                    Path(weights_path).expanduser().resolve() / DEFAULT_WEIGHTS_FILENAME
+                )
+            else:
+                resolved_weights = Path(weights_path).expanduser().resolve()
+
+            if not resolved_weights.exists():
+                raise FileNotFoundError(
+                    f"Weights not found at {resolved_weights}. Run 'unreflect download --weights' first."
+                )
+
+            inner = load_pretrained(
+                weights_path=resolved_weights,
+                config_path=config_path,
+                device=str(torch_device),
+                strict=False,
+                verbose=verbose,
+            )
+
         self._model = inner
         self._device = torch_device
         cfg = self._model.dinov3.config

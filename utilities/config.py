@@ -47,9 +47,9 @@ def create_model_from_config(
     verbose: bool = True,
 ):
     """
-    Create the RGBPOLDecomposer model from configuration.
+    Create the model from configuration.
     
-    This function initializes a RGBPOLDecomposer model by extracting configuration
+    This function initializes a model by extracting configuration
     parameters for different components (RGB encoder, POL encoder, cross-attention,
     and decoders) and creates the model with the specified architecture.
 
@@ -62,7 +62,7 @@ def create_model_from_config(
         verbose: If True, print/log progress information. Defaults to True.
 
     Returns:
-        RGBPOLDecomposer: The initialized model ready for training or inference
+        nn.Module: The initialized model ready for training or inference
         
     Note:
         The model expects input tensors of shape [B×3×H×W] for RGB images and 
@@ -211,7 +211,7 @@ def create_model_from_config(
     else:
         shared_dinov3 = models_module.DINOv3(dinov3_cfg).to(device)
     # Create the main model
-    model_class_str = model_config.get("MODEL_CLASS", "RGBPOLDecomposer")
+    model_class_str = model_config.get("MODEL_CLASS", "UnReflect_Model")
     # Get the model class from the string name
     model_class = getattr(models_module, model_class_str)
 
@@ -221,14 +221,15 @@ def create_model_from_config(
         **decoder_kwargs,
     }
 
+    ### DEPRECATED: Not using polarization anymore
     # Add POL-specific configs only for RGBPOLDecomposer
-    if model_class_str == "RGBPOLDecomposer":
-        model_kwargs.update(
-            {
-                "pol_encoder": pol_enc_cfg,
-                "pol_cross_attn": cross_attn_cfg,
-            }
-        )
+    # if model_class_str == "RGBPOLDecomposer":
+    #     model_kwargs.update(
+    #         {
+    #             "pol_encoder": pol_enc_cfg,
+    #             "pol_cross_attn": cross_attn_cfg,
+    #         }
+    #     )
 
     # Add TokenInpainter config for UnReflect_Model_TokenInpainter
     if model_class_str == "UnReflect_Model_TokenInpainter":

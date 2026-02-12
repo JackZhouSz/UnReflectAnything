@@ -963,6 +963,14 @@ class Mono3D_Dataset(Dataset):
                     .replace(".jpg", ".pt")
                 )
                 try:
+                    if not os.path.exists(emb_path):
+                        if emb_path.endswith(".pt"):
+                            alt_emb_path = emb_path[:-3] + ".pth"
+                        elif emb_path.endswith(".pth"):
+                            alt_emb_path = emb_path[:-4] + ".pt"
+                            alt_emb_path = None
+                        if alt_emb_path and os.path.exists(alt_emb_path):
+                            emb_path = alt_emb_path
                     emb = torch.stack(
                         torch.load(emb_path, weights_only=True, map_location="cpu")
                     ).squeeze(1)
@@ -1020,6 +1028,14 @@ class Mono3D_Dataset(Dataset):
             return self.embedding_cache[path]
 
         # If not in cache or not preloading, load from disk
+        if not os.path.exists(emb_path):
+            if emb_path.endswith(".pt"):
+                alt_emb_path = emb_path[:-3] + ".pth"
+            elif emb_path.endswith(".pth"):
+                alt_emb_path = emb_path[:-4] + ".pt"
+                alt_emb_path = None
+            if alt_emb_path and os.path.exists(alt_emb_path):
+                emb_path = alt_emb_path
         return torch.stack(
             torch.load(emb_path, weights_only=True, map_location="cpu")
         ).squeeze(1)

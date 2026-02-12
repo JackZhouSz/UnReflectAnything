@@ -594,10 +594,38 @@ def load_pretrained(
     # Handle checkpoints saved with DataParallel / wrapped module: keys may be prefixed with "module."
     model_keys = set(model.state_dict().keys())
     ckpt_keys = set(state_dict.keys())
-    if ckpt_keys and not (model_keys & ckpt_keys) and all(k.startswith("module.") for k in ckpt_keys):
-        state_dict = {k.removeprefix("module."): v for k, v in state_dict.items()}
-        if verbose:
-            print("Checkpoint keys were prefixed with 'module.'; stripped prefix to match model.")
+
+    # Helper: Find longest common prefix (by dot-level) among a list of keys
+    def common_dot_prefix(keys):
+        split_keys = [k.split(".") for k in keys if "." in k]
+        if not split_keys:
+            return ""
+        min_parts = min(len(parts) for parts in split_keys)
+        prefix = []
+        for i in range(min_parts):
+            ith = [parts[i] for parts in split_keys]
+            if all(x == ith[0] for x in ith):
+                prefix.append(ith[0])
+            else:
+                break
+        return ".".join(prefix) + "." if prefix else ""
+
+    common_prefix = ""
+    if ckpt_keys and not (model_keys & ckpt_keys):
+        # Find a common prefix among all checkpoint keys
+        common_prefix = common_dot_prefix(list(ckpt_keys))
+        if common_prefix and all(k.startswith(common_prefix) for k in ckpt_keys):
+            # Attempt to strip it and reload
+            stripped_keys = {k[len(common_prefix):]: v for k, v in state_dict.items()}
+            if model_keys & set(stripped_keys.keys()):
+                state_dict = stripped_keys
+                if verbose:
+                    print(f"Checkpoint keys were prefixed with '{common_prefix}'; stripped prefix to match model.")
+        # Fallback: Handle normal "module." case if needed
+        elif all(k.startswith("module.") for k in ckpt_keys):
+            state_dict = {k.removeprefix("module."): v for k, v in state_dict.items()}
+            if verbose:
+                print("Checkpoint keys were prefixed with 'module.'; stripped prefix to match model.")
 
     missing, unexpected = model.load_state_dict(state_dict, strict=strict)
     def top2_levels(key):

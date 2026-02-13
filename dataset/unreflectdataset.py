@@ -405,6 +405,7 @@ class UnReflectAnything_Dataset(Dataset):
         scene_pairs = []
         for scene_name in os.listdir(self.root_dir):
             # Use new filtering logic
+
             if not self._should_include_scene(scene_name):
                 continue
 
@@ -450,7 +451,6 @@ class UnReflectAnything_Dataset(Dataset):
             # Subsample per scene folder if requested (load 1/N frames)
             if self.sample_every_n > 1:
                 rgb_files = rgb_files[:: self.sample_every_n]
-
             for rgb_file in rgb_files:
                 raw_path = os.path.join(rgb_dir, rgb_file)
                 # Determine diffuse path if available

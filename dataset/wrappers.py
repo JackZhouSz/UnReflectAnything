@@ -1,257 +1,133 @@
+"""
+Dataset identity defaults live here so config_train.yaml stays minimal.
+
+**Change defaults only in DATASET_DEFAULTS** (the dict below). Do not edit the
+wrapper classes for default values—they forward DATASET_DEFAULTS automatically.
+Add a new dataset by adding an entry to DATASET_DEFAULTS; a wrapper class is
+optional and only needed if you set CLASS in config for custom behavior.
+"""
+from typing import Dict, Any
 from dataset.unreflectdataset import UnReflectAnything_Dataset
 
-
-# Dataset-specific classes inheriting from base UnReflectAnything_Dataset class
-class SCRREAM_Dataset(UnReflectAnything_Dataset):
-    """
-    SCRREAM dataset implementation for polarization-based reflection removal.
-
-    Inherits all functionality from the base UnReflectAnything_Dataset class.
-    This class can be extended with SCRREAM-specific preprocessing,
-    data augmentation, or validation logic as needed.
-
-    The SCRREAM dataset contains RGB images with corresponding polarization
-    data for training reflection removal models.
-    """
-
-    def __init__(self, **kwargs) -> None:
-        """
-        Initialize SCRREAM dataset.
-
-        Args:
-            **kwargs: All arguments passed to parent UnReflectAnything_Dataset class
-        """
-        super().__init__(
-            root_dir="$DATASET_DIR/SCRREAM/",
-            rgb_ext=".png",
-            pol_ext=".png",
-            polarization_format="single_file_clock",  # "single_file_clock", "separate_files" or "mosaic"
-            **kwargs,
-        )
-        # Add any SCRREAM-specific initialization here
+# Key mapping: config uppercase -> base class kwargs (snake_case)
+_IDENTITY_KEY_MAP = {
+    "ROOT_DIR": "root_dir",
+    "RGB_EXT": "rgb_ext",
+    "POL_EXT": "pol_ext",
+    "POLARIZATION_FORMAT": "polarization_format",
+    "RGB_DIR_NAME": "rgb_dir_name",
+    "POL_DIR_NAME": "pol_dir_name",
+    "DIFFUSE_DIR_NAME": "diffuse_dir_name",
+}
+_GENERIC = {
+    "root_dir": "$DATASET_DIR/PLACEHOLDER/",
+    "rgb_ext": ".png",
+    "pol_ext": ".png",
+    "polarization_format": "single_file_clock",
+    "rgb_dir_name": "rgb",
+    "pol_dir_name": "pol",
+    "diffuse_dir_name": "diffuse",
+}
 
 
-class HOUSECAT6D_Dataset(UnReflectAnything_Dataset):
-    """
-    HOUSECAT6D dataset implementation for 6D pose estimation with polarization.
-
-    Inherits all functionality from the base UnReflectAnything_Dataset class.
-    This class can be extended with HOUSECAT6D-specific preprocessing,
-    pose annotation loading, or 6D pose-specific data augmentation.
-
-    The HOUSECAT6D dataset provides RGB and polarization data along with
-    6D object pose annotations for training pose estimation models.
-    """
-
-    def __init__(self, **kwargs) -> None:
-        """
-        Initialize HOUSECAT6D dataset.
-
-        Args:
-            **kwargs: All arguments passed to parent UnReflectAnything_Dataset class
-        """
-        super().__init__(
-            root_dir="$DATASET_DIR/HouseCat6D/",
-            rgb_ext=".png",
-            pol_ext=".png",
-            polarization_format="single_file_clock",  # "single_file_clock", "separate_files" or "mosaic"
-            **kwargs,
-        )
-        # Add any HOUSECAT6D-specific initialization here
+def _identity_kwargs_for(dataset_name: str, overrides: Dict[str, Any] = None) -> Dict[str, Any]:
+    """Build identity kwargs from DATASET_DEFAULTS (and optional overrides). Single source of truth is the dict."""
+    out = dict(_GENERIC)
+    out["root_dir"] = f"$DATASET_DIR/{dataset_name}/"
+    defaults = DATASET_DEFAULTS.get(dataset_name, {})
+    for cfg_key, kw_key in _IDENTITY_KEY_MAP.items():
+        val = (overrides or {}).get(cfg_key) if overrides is not None else None
+        if val is None:
+            val = defaults.get(cfg_key, out[kw_key])
+        out[kw_key] = val
+    return out
 
 
-class POLARGB_Dataset(UnReflectAnything_Dataset):
-    """
-    PolaRGB dataset implementation for polarization-guided RGB processing.
+# Edit this dict only. Wrapper classes below read from it.
+DATASET_DEFAULTS: Dict[str, Dict[str, Any]] = {
+    "SCRREAM": {
+        "ROOT_DIR": "$DATASET_DIR/SCRREAM/",
+        "RGB_EXT": ".png",
+        "POL_EXT": ".png",
+        "POLARIZATION_FORMAT": "single_file_clock",
+    },
+    "HOUSECAT6D": {
+        "ROOT_DIR": "$DATASET_DIR/HouseCat6D/",
+        "RGB_EXT": ".png",
+        "POL_EXT": ".png",
+        "POLARIZATION_FORMAT": "single_file_clock",
+    },
+    "POLARGB": {
+        "ROOT_DIR": "$DATASET_DIR/PolaRGB/",
+        "RGB_EXT": ".png",
+        "POL_EXT": ".png",
+        "POLARIZATION_FORMAT": "separate_files",
+    },
+    "CROMO": {
+        "ROOT_DIR": "$DATASET_DIR/CroMo/",
+        "RGB_DIR_NAME": "rgb/left/data",
+        "POL_DIR_NAME": "polarized/left/data/",
+        "RGB_EXT": ".png",
+        "POL_EXT": ".png",
+        "POLARIZATION_FORMAT": "single_file_topdown",
+    },
+    "SCARED": {
+        "ROOT_DIR": "$DATASET_DIR/SCARED/",
+        "RGB_EXT": ".png",
+        "POL_EXT": ".png",
+    },
+    "STEREOMIS_TRACKING": {
+        "ROOT_DIR": "$DATASET_DIR/StereoMIS_Tracking/",
+        "RGB_DIR_NAME": "video_frames",
+        "RGB_EXT": ".png",
+    },
+    "CHOLEC80": {
+        "ROOT_DIR": "$DATASET_DIR/CHOLEC80/videos/",
+        "RGB_DIR_NAME": "frames",
+        "RGB_EXT": ".png",
+    },
+    "PSD": {
+        "ROOT_DIR": "$DATASET_DIR/PSD_Dataset/",
+        "RGB_EXT": ".png",
+        "RGB_DIR_NAME": "specular",
+        "DIFFUSE_DIR_NAME": "diffuse",
+    },
+    "SUNRGBD": {
+        "ROOT_DIR": "$DATASET_DIR/SUNRGBD/",
+        "RGB_DIR_NAME": "frames",
+        "RGB_EXT": ".jpg",
+    },
+    "SCANNET": {
+        "ROOT_DIR": "$DATASET_DIR/SCANNET/",
+        "RGB_DIR_NAME": "rgb",
+        "RGB_EXT": ".jpg",
+    },
+    "OPENIMAGESV7": {
+        "ROOT_DIR": "$DATASET_DIR/OPENIMAGESV7/",
+        "RGB_DIR_NAME": "rgb",
+        "RGB_EXT": ".jpg",
+    },
+}
 
-    Inherits all functionality from the base UnReflectAnything_Dataset class.
-    This class can be extended with PolaRGB-specific preprocessing,
-    polarization analysis, or RGB enhancement techniques.
-
-    The PolaRGB dataset combines RGB imagery with polarization measurements
-    for improved scene understanding and image enhancement tasks.
-    """
-
-    def __init__(self, **kwargs) -> None:
-        """
-        Initialize PolaRGB dataset.
-
-        Args:
-            **kwargs: All arguments passed to parent UnReflectAnything_Dataset class
-        """
-        super().__init__(
-            root_dir="$DATASET_DIR/PolaRGB/",
-            rgb_ext=".png",
-            pol_ext=".png",
-            polarization_format="separate_files",  # "single_file_clock", "separate_files" or "mosaic"
-            **kwargs,
-        )
-        # Add any PolaRGB-specific initialization here
-
-
-class CROMO_Dataset(UnReflectAnything_Dataset):
-    """
-    CROMO dataset implementation for polarization-guided RGB processing.
-
-    Inherits all functionality from the base UnReflectAnything_Dataset class.
-    This class can be extended with CROMO-specific preprocessing,
-    polarization analysis, or RGB enhancement techniques.
-
-    The CROMO dataset combines RGB imagery with polarization measurements
-    for improved scene understanding and image enhancement tasks.
-    """
-
-    def __init__(self, **kwargs) -> None:
-        """
-        Initialize CROMO dataset.
-
-        Args:
-            **kwargs: All arguments passed to parent UnReflectAnything_Dataset class
-        """
-        super().__init__(
-            root_dir="$DATASET_DIR/CroMo/",
-            rgb_dir_name="rgb/left/data",
-            pol_dir_name="polarized/left/data/",
-            rgb_ext=".png",
-            pol_ext=".png",
-            polarization_format="single_file_topdown",
-            **kwargs,
-        )
-        # Add any SCARED-specific initialization here
-
-
-class SCARED_Dataset(UnReflectAnything_Dataset):
-    """
-    SCARED dataset implementation for polarization-guided RGB processing.
-
-    Inherits all functionality from the base UnReflectAnything_Dataset class.
-    This class can be extended with SCARED-specific preprocessing,
-    polarization analysis, or RGB enhancement techniques.
-
-    The SCARED dataset combines RGB imagery with polarization measurements
-    for improved scene understanding and image enhancement tasks.
-    """
-
-    def __init__(self, **kwargs) -> None:
-        """
-        Initialize SCARED dataset.
-
-        Args:
-            **kwargs: All arguments passed to parent UnReflectAnything_Dataset class
-        """
-        super().__init__(
-            root_dir="$DATASET_DIR/SCARED/",
-            rgb_ext=".png",
-            pol_ext=".png",
-            **kwargs,
-        )
-        # Add any SCARED-specific initialization here
+# Wrapper classes (optional; only used when CLASS is set in config). They read from DATASET_DEFAULTS.
+def _make_wrapper(dataset_key: str):
+    """Factory: class that forwards DATASET_DEFAULTS[dataset_key] + kwargs to base."""
+    class _Cls(UnReflectAnything_Dataset):
+        def __init__(self, **kwargs) -> None:
+            identity = _identity_kwargs_for(dataset_key)
+            super().__init__(**{**identity, **kwargs})
+    _Cls.__name__ = f"{dataset_key}_Dataset"
+    return _Cls
 
 
-class STEREOMIS_TRACKING_Dataset(UnReflectAnything_Dataset):
-    """
-    STEREOMIS_TRACKING dataset implementation for polarization-guided RGB processing.
-    Inherits all functionality from the base UnReflectAnything_Dataset class.
-    This class can be extended with STEREOMIS_TRACKING-specific preprocessing,
-    polarization analysis, or RGB enhancement techniques.
-
-    The STEREOMIS_TRACKING dataset combines RGB imagery with polarization measurements
-    for improved scene understanding and image enhancement tasks.
-    """
-
-    def __init__(self, **kwargs) -> None:
-        """
-        Initialize SCARED dataset.
-
-        Args:
-            **kwargs: All arguments passed to parent UnReflectAnything_Dataset class
-        """
-        super().__init__(
-            root_dir="$DATASET_DIR/StereoMIS_Tracking/",
-            rgb_dir_name="video_frames",
-            rgb_ext=".png",
-            **kwargs,
-        )
-        # Add any SCARED-specific initialization here
-
-
-class CHOLEC80_Dataset(UnReflectAnything_Dataset):
-    """
-    CHOLEC80 dataset implementation for polarization-guided RGB processing.
-    Inherits all functionality from the base UnReflectAnything_Dataset class.
-    This class can be extended with CHOLEC80-specific preprocessing,
-    polarization analysis, or RGB enhancement techniques.
-
-    The CHOLEC80 dataset combines RGB imagery with polarization measurements
-    for improved scene understanding and image enhancement tasks.
-    """
-
-    def __init__(self, **kwargs) -> None:
-        """
-        Initialize SCARED dataset.
-
-        Args:
-            **kwargs: All arguments passed to parent UnReflectAnything_Dataset class
-        """
-        super().__init__(
-            root_dir="$DATASET_DIR/CHOLEC80/videos/",
-            rgb_dir_name="frames",
-            rgb_ext=".png",
-            **kwargs,
-        )
-        # Add any SCARED-specific initialization here
-
-
-class PSD_Dataset(UnReflectAnything_Dataset):
-    """
-    PSD dataset implementation for polarization-guided RGB processing.
-
-    Inherits all functionality from the base UnReflectAnything_Dataset class.
-    This class can be extended with PSD-specific preprocessing,
-    polarization analysis, or RGB enhancement techniques.
-
-    The PSD dataset combines RGB imagery with polarization measurements
-    for improved scene understanding and image enhancement tasks.
-    """
-
-    def __init__(self, **kwargs) -> None:
-        """
-        Initialize PSD dataset.
-
-        Args:
-            **kwargs: All arguments passed to parent UnReflectAnything_Dataset class
-        """
-        super().__init__(
-            root_dir="$DATASET_DIR/PSD_Dataset/",
-            rgb_ext=".png",
-            rgb_dir_name="specular",
-            diffuse_dir_name="diffuse",
-            **kwargs,
-        )
-
-class SUNRGBD_Dataset(UnReflectAnything_Dataset):
-    """
-    SUNRGBD dataset implementation for polarization-guided RGB processing.
-
-    Inherits all functionality from the base UnReflectAnything_Dataset class.
-    This class can be extended with SUNRGBD-specific preprocessing,
-    polarization analysis, or RGB enhancement techniques.
-
-    The SUNRGBD dataset combines RGB imagery with polarization measurements
-    for improved scene understanding and image enhancement tasks.
-    """
-
-    def __init__(self, **kwargs) -> None:
-        """
-        Initialize SUNRGBD dataset.
-
-        Args:
-            **kwargs: All arguments passed to parent UnReflectAnything_Dataset class
-        """
-        super().__init__(
-            root_dir="$DATASET_DIR/SUNRGBD/",
-            rgb_dir_name="frames",
-            rgb_ext=".jpg",
-            **kwargs,
-        )
-        # Add any SUNRGBD-specific initialization here
+SCRREAM_Dataset = _make_wrapper("SCRREAM")
+HOUSECAT6D_Dataset = _make_wrapper("HOUSECAT6D")
+POLARGB_Dataset = _make_wrapper("POLARGB")
+CROMO_Dataset = _make_wrapper("CROMO")
+SCARED_Dataset = _make_wrapper("SCARED")
+STEREOMIS_TRACKING_Dataset = _make_wrapper("STEREOMIS_TRACKING")
+CHOLEC80_Dataset = _make_wrapper("CHOLEC80")
+PSD_Dataset = _make_wrapper("PSD")
+SUNRGBD_Dataset = _make_wrapper("SUNRGBD")
+SCANNET_Dataset = _make_wrapper("SCANNET")
+OPENIMAGESV7_Dataset = _make_wrapper("OPENIMAGESV7")

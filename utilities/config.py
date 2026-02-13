@@ -90,16 +90,14 @@ def create_model_from_config(
     # Dynamically import the models module
     models_module = importlib.import_module(model_module_name)
 
-    # Get image dimensions from config (check multiple possible locations)
+    # Get image dimensions from config (first dataset with TARGET_SIZE)
     target_size = None
-    for dataset_name in ["SCRREAM", "HOUSECAT6D", "POLARGB"]:
-        dataset_config = (
-            config.get("DATASETS", {}).get("value", {}).get(dataset_name, {})
-        )
-        if "TARGET_SIZE" in dataset_config:
-            target_size = dataset_config["TARGET_SIZE"]
-            break
-
+    datasets_cfg = config.get("DATASETS", {})
+    if isinstance(datasets_cfg, dict):
+        for dataset_config in datasets_cfg.values():
+            if isinstance(dataset_config, dict) and "TARGET_SIZE" in dataset_config:
+                target_size = dataset_config["TARGET_SIZE"]
+                break
     if target_size is None:
         target_size = (224, 224)  # Default fallback
 
@@ -311,15 +309,35 @@ def wrap_model_for_parallelization(model: torch.nn.Module, config: DotMap):
     
 
 
+def _resolve_dataset_class(config: DotMap, dataset_name: str, dataset_config: dict):
+    """
+    Resolve dataset class: use CLASS from config if set, else UnReflectAnything_Dataset.
+    CLASS can be a dotted path (e.g. "dataset.wrappers.SCRREAM_Dataset") or a name
+    in dataset.wrappers (e.g. "SCRREAM_Dataset").
+    """
+    from dataset.unreflectdataset import UnReflectAnything_Dataset
+
+    class_spec = dataset_config.get("CLASS")
+    if not class_spec or not isinstance(class_spec, str):
+        return UnReflectAnything_Dataset
+    if "." in class_spec:
+        module_path, _, class_name = class_spec.rpartition(".")
+        mod = importlib.import_module(module_path)
+        return getattr(mod, class_name)
+    # Name only: resolve in dataset.wrappers
+    from dataset import wrappers
+    return getattr(wrappers, class_spec, UnReflectAnything_Dataset)
+
+
 def create_datasets_from_config(
     config: DotMap, dataset_names: Optional[List[str]] = None
 ) -> Dict[str, Any]:
     """
     Create training and validation datasets from configuration.
 
-    Reads from YAML config DATASETS section, supports multiple datasets
-    (SCRREAM, HOUSECAT6D, POLARGB, etc.), creates dataset-specific classes,
-    and returns the Engine-ready dict with ConcatDatasets.
+    Reads from YAML config DATASETS section. Identity defaults (ROOT_DIR,
+    RGB_EXT, POLARIZATION_FORMAT, etc.) are taken from dataset.wrappers.DATASET_DEFAULTS;
+    YAML overrides only what varies (TARGET_SIZE, VAL_SCENES, RESIZE_MODE, etc.).
 
     Logic:
     - VAL_SCENES: defines which scenes to use for validation
@@ -335,18 +353,28 @@ def create_datasets_from_config(
         Dict with keys 'Training', 'Validation', 'Test' (ConcatDataset or None),
         and 'workers' (int).
     """
+    from dataset.unreflectdataset import UnReflectAnything_Dataset
+    from dataset.wrappers import DATASET_DEFAULTS
 
-    from dataset.wrappers import (
-        SCRREAM_Dataset,
-        HOUSECAT6D_Dataset,
-        POLARGB_Dataset,
-        SCARED_Dataset,
-        STEREOMIS_TRACKING_Dataset,
-        CHOLEC80_Dataset,
-        CROMO_Dataset,
-        PSD_Dataset,
-        SUNRGBD_Dataset,
-    )
+    # Keys that map from config/YAML (uppercase) to base class kwargs (snake_case)
+    _IDENTITY_KEY_MAP = {
+        "ROOT_DIR": "root_dir",
+        "RGB_EXT": "rgb_ext",
+        "POL_EXT": "pol_ext",
+        "POLARIZATION_FORMAT": "polarization_format",
+        "RGB_DIR_NAME": "rgb_dir_name",
+        "POL_DIR_NAME": "pol_dir_name",
+        "DIFFUSE_DIR_NAME": "diffuse_dir_name",
+    }
+    _GENERIC_IDENTITY = {
+        "root_dir": "$DATASET_DIR/PLACEHOLDER/",
+        "rgb_ext": ".png",
+        "pol_ext": ".png",
+        "polarization_format": "single_file_clock",
+        "rgb_dir_name": "rgb",
+        "pol_dir_name": "pol",
+        "diffuse_dir_name": "diffuse",
+    }
 
     try:
         global_config = config
@@ -365,18 +393,6 @@ def create_datasets_from_config(
                 "No datasets found in configuration. Check DATASETS section in config file."
             )
 
-        dataset_classes = {
-            "SCRREAM": SCRREAM_Dataset,
-            "HOUSECAT6D": HOUSECAT6D_Dataset,
-            "POLARGB": POLARGB_Dataset,
-            "SCARED": SCARED_Dataset,
-            "STEREOMIS_TRACKING": STEREOMIS_TRACKING_Dataset,
-            "CHOLEC80": CHOLEC80_Dataset,
-            "CROMO": CROMO_Dataset,
-            "PSD": PSD_Dataset,
-            "SUNRGBD": SUNRGBD_Dataset,
-        }
-
         global_train_scenes = global_config.get("TRAIN_SCENES", {}).get("value")
         global_val_scenes = global_config.get("VAL_SCENES", {}).get("value")
 
@@ -386,17 +402,15 @@ def create_datasets_from_config(
         logger.info(f"Processing {len(dataset_names)} datasets: {dataset_names}")
 
         for dataset_name in dataset_names:
-            if dataset_name not in dataset_classes:
-                logger.warning(
-                    f"Warning: Dataset class for '{dataset_name}' not found. Skipping."
-                )
-                logger.info(f"Available classes: {list(dataset_classes.keys())}")
-                continue
-
             datasets_value = global_config.DATASETS
             if datasets_value is None:
-                raise ValueError("DATASETS['value'] is None in config")
-            dataset_config = datasets_value[dataset_name]
+                raise ValueError("DATASETS is None in config")
+            dataset_config = datasets_value.get(dataset_name)
+            if not isinstance(dataset_config, dict):
+                logger.warning(
+                    f"Dataset '[orange1]{dataset_name}[/]' has no dict config. Skipping."
+                )
+                continue
 
             def get_config_value(param_name, default_value):
                 dataset_value = dataset_config.get(param_name)
@@ -407,7 +421,22 @@ def create_datasets_from_config(
                     return global_param["value"]
                 return default_value
 
+            # Identity params: from wrappers.DATASET_DEFAULTS, then YAML overrides
+            generic = dict(_GENERIC_IDENTITY)
+            generic["root_dir"] = f"$DATASET_DIR/{dataset_name}/"
+            wrapper_defaults = DATASET_DEFAULTS.get(dataset_name, {})
+            identity = {}
+            for cfg_key, kw_key in _IDENTITY_KEY_MAP.items():
+                val = dataset_config.get(cfg_key)
+                if val is not None:
+                    identity[kw_key] = val
+                elif cfg_key in wrapper_defaults:
+                    identity[kw_key] = wrapper_defaults[cfg_key]
+                else:
+                    identity[kw_key] = generic[kw_key]
+
             dataset_params = {
+                **identity,
                 "rho_s": get_config_value("RHO_S", 0.6),
                 "eps": get_config_value("EPS", 1e-8),
                 "target_size": tuple(get_config_value("TARGET_SIZE", [224, 224])),
@@ -451,20 +480,22 @@ def create_datasets_from_config(
             if global_train_scenes is not None and len(global_train_scenes) > 0:
                 train_scenes = global_train_scenes
                 logger.info(
-                    f"Using global TRAIN_SCENES for {dataset_name}: {train_scenes}"
+                    f"Using global TRAIN_SCENES for [orange1]{dataset_name}[/]: {train_scenes}"
                 )
             elif dataset_train_scenes and len(dataset_train_scenes) > 0:
                 train_scenes = dataset_train_scenes
                 logger.info(
-                    f"Using dataset-specific TRAIN_SCENES for {dataset_name}: {train_scenes}"
+                    f"Using dataset-specific TRAIN_SCENES for [orange1]{dataset_name}[/]: {train_scenes}"
                 )
             else:
                 train_scenes = None
                 logger.info(
-                    f"Using all scenes except VAL_SCENES for {dataset_name} training"
+                    f"Using all scenes except VAL_SCENES for [orange1]{dataset_name}[/] training"
                 )
 
-            dataset_class = dataset_classes[dataset_name]
+            dataset_class = _resolve_dataset_class(
+                global_config, dataset_name, dataset_config
+            )
 
             if train_scenes is not None and len(train_scenes) > 0:
                 dataset_params = {**dataset_params, "highlight_enable": True}
@@ -472,10 +503,10 @@ def create_datasets_from_config(
                 if len(train_dataset) > 0:
                     train_datasets.append(train_dataset)
                     logger.info(
-                        f"  ✓ Created training dataset for {dataset_name}: {len(train_dataset)} samples from specific scenes"
+                        f"  ✓ Created training dataset for [orange1]{dataset_name}[/]: {len(train_dataset)} samples from specific scenes"
                     )
                 else:
-                    logger.warning(f"  ✗ Training dataset for {dataset_name} is empty")
+                    logger.warning(f"  ✗ Training dataset for [orange1]{dataset_name}[/] is empty")
             else:
                 exclude_scenes = (
                     val_scenes if val_scenes and len(val_scenes) > 0 else []
@@ -489,10 +520,10 @@ def create_datasets_from_config(
                         else ""
                     )
                     logger.info(
-                        f"  ✓ Created training dataset for {dataset_name}: {len(train_dataset)} samples{excluded_text}"
+                        f"  ✓ Created training dataset for [orange1]{dataset_name}[/]: {len(train_dataset)} samples{excluded_text}"
                     )
                 else:
-                    logger.warning(f"  ✗ Training dataset for {dataset_name} is empty")
+                    logger.warning(f"  ✗ Training dataset for [orange1]{dataset_name}[/] is empty")
 
             if val_scenes and len(val_scenes) > 0:
                 dataset_params = {**dataset_params, "highlight_enable": False}
@@ -500,14 +531,14 @@ def create_datasets_from_config(
                 if len(val_dataset) > 0:
                     val_datasets.append(val_dataset)
                     logger.info(
-                        f"  ✓ Created validation dataset for {dataset_name}: {len(val_dataset)} samples from {len(val_scenes)} scenes"
+                        f"  ✓ Created validation dataset for [orange1]{dataset_name}[/]: {len(val_dataset)} samples from {len(val_scenes)} scenes"
                     )
                 else:
                     logger.warning(
-                        f"  ✗ Validation dataset for {dataset_name} is empty"
+                        f"  ✗ Validation dataset for [orange1]{dataset_name}[/] is empty"
                     )
             else:
-                logger.warning(f"  ! No validation scenes specified for {dataset_name}")
+                logger.warning(f"  ! No validation scenes specified for [orange1]{dataset_name}[/]")
 
         training = ConcatDataset(train_datasets) if train_datasets else None
         validation = ConcatDataset(val_datasets) if val_datasets else None

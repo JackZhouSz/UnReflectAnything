@@ -58,28 +58,23 @@ def _verify_dataset_impl(
     if not dataset_path.exists():
         raise FileNotFoundError(f"Dataset path not found: {dataset_path}")
 
-    from dataset import (
-        HOUSECAT6D_Dataset,
-        POLARGB_Dataset,
-        UnReflectAnything_Dataset,
-        SCRREAM_Dataset,
-    )
+    from dataset import UnReflectAnything_Dataset
+    from dataset.wrappers import DATASET_DEFAULTS, _identity_kwargs_for
 
-    dataset_classes = {
-        "SCRREAM": SCRREAM_Dataset,
-        "HOUSECAT6D": HOUSECAT6D_Dataset,
-        "POLARGB": POLARGB_Dataset,
-        "RGBP": UnReflectAnything_Dataset,
-    }
+    # Types to try (order matters for auto-detect). RGBP uses generic defaults.
+    dataset_type_keys = ["SCRREAM", "HOUSECAT6D", "POLARGB", "RGBP"]
+
+    def _make_ds(name: str):
+        kwargs = _identity_kwargs_for(name)
+        kwargs["root_dir"] = str(dataset_path)
+        kwargs["target_size"] = (224, 224)
+        kwargs["few_images"] = True
+        return UnReflectAnything_Dataset(**kwargs)
 
     if dataset_type is None:
-        for name, cls in dataset_classes.items():
+        for name in dataset_type_keys:
             try:
-                ds = cls(
-                    root_dir=str(dataset_path),
-                    target_size=(224, 224),
-                    few_images=True,
-                )
+                ds = _make_ds(name)
                 if len(ds) > 0:
                     print(f"Detected dataset type: {name}")
                     print(f"Found {len(ds)} samples")
@@ -90,18 +85,13 @@ def _verify_dataset_impl(
         return False
 
     dataset_type_upper = dataset_type.upper()
-    if dataset_type_upper not in dataset_classes:
+    if dataset_type_upper not in dataset_type_keys:
         print(f"Unknown dataset type: {dataset_type}")
-        print(f"Available types: {list(dataset_classes.keys())}")
+        print(f"Available types: {dataset_type_keys}")
         return False
 
-    cls = dataset_classes[dataset_type_upper]
     try:
-        ds = cls(
-            root_dir=str(dataset_path),
-            target_size=(224, 224),
-            few_images=True,
-        )
+        ds = _make_ds(dataset_type_upper)
         sample_count = len(ds)
         if sample_count > 0:
             print(f"Dataset '{dataset_type}' verified successfully!")

@@ -311,8 +311,8 @@ class TokenInpainter_Prior(nn.Module):
             )
             T_seed = torch.where(
                 mask,
-                self._local_prior_weight * T_seed
-                + (1.0 - self._local_prior_weight) * mean_prior,
+                (1.0 - self._local_prior_weight) * T_seed
+                + self._local_prior_weight * mean_prior,
                 T_seed,
             )
 

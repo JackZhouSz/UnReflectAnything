@@ -714,9 +714,13 @@ class UnReflect_Model(nn.Module):
             #     return dec
             if isinstance(dec, dict):
                 # Extract pretrained path before building decoder
-                pretrained_path = dec.get(
+                pretrained_relative_path = dec.get(
                     "from_pretrained", dec.get("FROM_PRETRAINED", "")
                 )
+                if pretrained_relative_path != "":
+                    pretrained_path = os.path.join(os.environ["WEIGHTS_DIR"],pretrained_relative_path)
+                else:
+                    pretrained_path = None
                 # Extract decoder learning rate
                 decoder_lr = dec.get("decoder_lr", dec.get("DECODER_LR", None))
                 # Extract selective freezing parameters (before building config)
@@ -1139,7 +1143,11 @@ class UnReflect_Model_TokenInpainter(UnReflect_Model):
         )
 
         # Extract pretrained path before filtering (not passed to constructor)
-        pretrained_path = token_inpainter_cfg.pop("from_pretrained", "")
+        pretrained_relative_path = token_inpainter_cfg.pop("from_pretrained", "")
+        if pretrained_relative_path != "":
+            pretrained_path = os.path.join(os.environ["WEIGHTS_DIR"], pretrained_relative_path)
+        else:
+            pretrained_path = None
 
         # Dynamically import the module
         token_inpainter_module = importlib.import_module(

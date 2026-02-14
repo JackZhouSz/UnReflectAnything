@@ -42,7 +42,7 @@ class UnReflectAnything_Dataset(Dataset):
     - load_rgb_only: bool - If True, forces loading only RGB data and ignores polarization data
 
     File paths:
-    - return_filepaths: bool - If True, includes 'filepaths' dict in output with keys 'raw_path', 'pol_path', 'diffuse_path', 'intrinsics_path'
+    - return_metadata: bool - If True, includes 'filepaths' dict in output with keys 'raw_path', 'pol_path', 'diffuse_path', 'intrinsics_path'
     """
 
     def __init__(
@@ -83,7 +83,7 @@ class UnReflectAnything_Dataset(Dataset):
         # RGB-only mode
         load_rgb_only: bool = False,  # Force loading only RGB data, ignore polarization
         # Return file paths in output
-        return_filepaths: bool = True,  # If True, include file paths in returned dictionary
+        return_metadata: bool = True,  # If True, include file paths in returned dictionary
         # Deprecated parameters (for backward compatibility)
         # Highlight detection (optional)
         highlight_enable: bool = False,
@@ -100,7 +100,7 @@ class UnReflectAnything_Dataset(Dataset):
         self.pol_ext = pol_ext
         self.transform = transform
         self.load_rgb_only = load_rgb_only
-        self.return_filepaths = return_filepaths
+        self.return_metadata = return_metadata
         self.rgb_dir_name = rgb_dir_name
         self.pol_dir_name = pol_dir_name
         self.diffuse_dir_name = diffuse_dir_name
@@ -898,7 +898,7 @@ class UnReflectAnything_Dataset(Dataset):
             - Polarization data: 'I0', 'I45', 'I90', 'I135', 'S0', 'S1', 'S2', 'DoLP', 'AoP', 'f_spec' (if available)
             - Image data: 'raw', 'specular', 'diffuse' (with backward-compatible alias 'rgb' == 'raw')
             - Camera data: 'intrinsics' [3, 3]
-            - File paths: 'filepaths' dict with keys 'raw_path', 'pol_path', 'diffuse_path', 'intrinsics_path' (if return_filepaths=True)
+            - File paths: 'filepaths' dict with keys 'raw_path', 'pol_path', 'diffuse_path', 'intrinsics_path' (if return_metadata=True)
             All image tensors have shape [C, H, W] where H, W match target_size if specified
         """
         raw_path, pol_path, diffuse_path, intrinsics_path, has_pol_data = (
@@ -1055,26 +1055,13 @@ class UnReflectAnything_Dataset(Dataset):
         if self.transform:
             sample = self.transform(sample)
 
-        # if self.load_rgb_only:
-        #     sample_rgbonly = {
-        #         "rgb": sample["rgb"],
-        #         "specular": sample["specular"],
-        #         "diffuse": sample["diffuse"],
-        #         "intrinsics": sample["intrinsics"],
-        #     }
-        #     return sample_rgbonly
-
-        # Backward-compatible alias: provide 'rgb' that mirrors 'raw'
-        # if "raw" in sample:
-        #     sample["rgb"] = sample["raw"]
-
         # Add file paths if requested
-        if self.return_filepaths:
-            filepaths = {
+        if self.return_metadata:
+            metadata = {
                 "raw_path": raw_path,
+                "orig_size": torch.tensor(sample["raw"].shape[-2:]),
                 # "pol_path": pol_path,
                 # "intrinsics_path": intrinsics_path,
             }
-            sample["filepaths"] = filepaths
-
+            sample["metadata"] = metadata
         return sample

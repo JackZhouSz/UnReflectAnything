@@ -18,7 +18,7 @@ parameters:
           REASSEMBLE_OUT_CHANNELS: [768,1024,1536,2048]  # Output channels for each decoder stage (DPT-style reassembly)
           REASSEMBLE_FACTORS: [4.0, 2.0, 1.0, 0.5]  # Spatial upsampling factors for each stage
           READOUT_TYPE: "ignore"  # Readout type for DPT decoder ("ignore", "project", etc.)
-          FROM_PRETRAINED: "weights/diffuse_decoder.pt"  # Path to pretrained decoder weights (optional)
+          FROM_PRETRAINED: "diffuse_decoder.pt"  # Path to pretrained decoder weights (optional)
           USE_BN: False  # Use batch normalization in decoder
           DROPOUT: 0.1  # Dropout rate in decoder layers
           OUTPUT_IMAGE_SIZE: [896,896]  # Output image resolution [height, width]
@@ -40,7 +40,7 @@ parameters:
       TOKEN_INPAINTER:
         TOKEN_INPAINTER_CLASS: "TokenInpainter_Prior"  # Token inpainter class name
         TOKEN_INPAINTER_MODULE: "token_inpainters"  # Module name to import token inpainter from
-        # FROM_PRETRAINED: "weights/token_inpainter.pth"  # Path to pretrained token inpainter weights (optional)
+        # FROM_PRETRAINED: "token_inpainter.pth"  # Path to pretrained token inpainter weights (optional)
         TOKEN_INPAINTER_LR: 1.0e-4  # Learning rate for token inpainter (can differ from base LR)
         DEPTH: 6  # Number of transformer blocks
         HEADS: 16  # Number of attention heads
@@ -82,6 +82,7 @@ parameters:
         # VAL_SCENES: "station"  # Validation scene names (optional)
         TARGET_SIZE: [896,896]  # Target image size [height, width]
         RESIZE_MODE: "resize"  # Image resizing mode
+        
         SAMPLE_EVERY_N: 2  # Load every Nth frame
         LOAD_RGB_ONLY: True  # Ignore polarization data if True
     
@@ -90,6 +91,7 @@ parameters:
         VAL_SCENES: "PSD_Val"  # Validation scene name (string or list)
         TARGET_SIZE: [896,896]  # Target image size [height, width]
         RESIZE_MODE: "resize+crop"  # Image resizing mode
+        
         SAMPLE_EVERY_N: 1  # Load every Nth frame (1 = all frames)
         LOAD_RGB_ONLY: True  # Ignore polarization data if True
 
@@ -141,33 +143,15 @@ parameters:
         RESIZE_MODE: "resize+crop"  # Image resizing mode
         SAMPLE_EVERY_N: 4  # Load every Nth frame
         LOAD_RGB_ONLY: True  # Ignore polarization data if True
-
-      SCANNET:
-        TRAIN_SCENES: ["train"]
-        VAL_SCENES: ["val"]
-        TARGET_SIZE: [896,896]
-        RESIZE_MODE: "resize+crop"
-        SAMPLE_EVERY_N: 10
-        LOAD_RGB_ONLY: True
-        FEW_IMAGES: False
-      
-      OPENIMAGESV7:
-        TRAIN_SCENES: ["thescene"]
-        # VAL_SCENES: ["val"]
-        TARGET_SIZE: [896,896]
-        RESIZE_MODE: "resize+crop"
-        SAMPLE_EVERY_N: 1
-        LOAD_RGB_ONLY: True
-        FEW_IMAGES: False
         
 
   FEW_IMAGES_OVERRIDE:
     value: False  # If True, override all datasets' FEW_IMAGES to True (for quick debugging across all datasets)
 
   BATCH_SIZE: # Max batch size with img size 896 is 32
-    value: 6 # Number of samples per batch (adjust based on GPU memory)
+    value: 8 # Number of samples per batch (adjust based on GPU memory)
   NUM_WORKERS:
-    value: 16  # Number of data loading worker processes (0 = main process only, "auto" = 90% of CPU affinity)
+    value: 12  # Number of data loading worker processes (0 = main process only, "auto" = 90% of CPU affinity)
   SHUFFLE:
     value: True  # Shuffle training data each epoch (False for validation/test)
   PIN_MEMORY:

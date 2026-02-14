@@ -107,6 +107,11 @@ DATASET_DEFAULTS: Dict[str, Dict[str, Any]] = {
         "RGB_DIR_NAME": "rgb",
         "RGB_EXT": ".jpg",
     },
+    "ENDOSYNTH": {
+        "ROOT_DIR": "$DATASET_DIR/ENDOSYNTH/",
+        "RGB_DIR_NAME": "rgb",
+        "RGB_EXT": ".png",
+    },
 }
 
 # Wrapper classes (optional; only used when CLASS is set in config). They read from DATASET_DEFAULTS.
@@ -131,3 +136,4 @@ PSD_Dataset = _make_wrapper("PSD")
 SUNRGBD_Dataset = _make_wrapper("SUNRGBD")
 SCANNET_Dataset = _make_wrapper("SCANNET")
 OPENIMAGESV7_Dataset = _make_wrapper("OPENIMAGESV7")
+ENDOSYNTH_Dataset = _make_wrapper("ENDOSYNTH")

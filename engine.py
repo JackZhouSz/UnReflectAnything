@@ -1226,64 +1226,6 @@ class Engine:
                             ).int()[0]
                         )
 
-                        # gt_decomposition["token_inpaint_sup_full"] = (
-                        #     rgb(
-                        #         diffuse_teacher_tokens[-1]
-                        #         .reshape(
-                        #             -1, patch_resolution, patch_resolution, embed_dim
-                        #         )
-                        #         .permute(0, 3, 1, 2)
-                        #         .detach()[0],
-                        #         pca=pca,
-                        #         resize=(
-                        #             self.config.MODEL.RGB_ENCODER.IMAGE_SIZE,
-                        #             self.config.MODEL.RGB_ENCODER.IMAGE_SIZE,
-                        #         ),
-                        #         as_tensor=True,
-                        #         blackout=False,
-                        #     )
-                        # )
-                        # pred_decomposition["token_inpaint_sup_full"] = (
-                        #     rgb(
-                        #         pred_decomposition["tokens_completed"][-1]
-                        #         .reshape(
-                        #             -1, patch_resolution, patch_resolution, embed_dim
-                        #         )
-                        #         .permute(0, 3, 1, 2)
-                        #         .detach()[0],
-                        #         pca=pca,
-                        #         resize=(
-                        #             self.config.MODEL.RGB_ENCODER.IMAGE_SIZE,
-                        #             self.config.MODEL.RGB_ENCODER.IMAGE_SIZE,
-                        #         ),
-                        #         as_tensor=True,
-                        #         blackout=False,
-                        #     )
-                        # )
-                        # gt_decomposition["token_inpaint_sup_HL"] = (
-                        #     rgb(
-                        #         highlight_teacher_tokens[-1]
-                        #         .reshape(
-                        #             -1, patch_resolution, patch_resolution, embed_dim
-                        #         )
-                        #         .permute(0, 3, 1, 2)
-                        #         .detach()[0],
-                        #         pca=pca,
-                        #         resize=(
-                        #             self.config.MODEL.RGB_ENCODER.IMAGE_SIZE,
-                        #             self.config.MODEL.RGB_ENCODER.IMAGE_SIZE,
-                        #         ),
-                        #         as_tensor=True,
-                        #         blackout=False,
-                        #     )
-                        #     * token_inpaint_mask_sup
-                        # )
-                        # gt_decomposition["patch_mask_inpaint_sup"] = (
-                        #     token_inpaint_mask_sup.int()
-                        # )
-                        # gt_decomposition["patch_mask_inpaint"] = (
-                        #     token_inpaint_mask.int()
-                        # )
 
                         ### REMOVING A BUNCH OF DEBUF STUFF FROM THE PLOTTING ROUTINES
                         try:

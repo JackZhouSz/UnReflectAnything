@@ -18,12 +18,12 @@ parameters:
           REASSEMBLE_OUT_CHANNELS: [768,1024,1536,2048]  # Output channels for each decoder stage (DPT-style reassembly)
           REASSEMBLE_FACTORS: [4.0, 2.0, 1.0, 0.5]  # Spatial upsampling factors for each stage
           READOUT_TYPE: "ignore"  # Readout type for DPT decoder ("ignore", "project", etc.)
-          FROM_PRETRAINED: "weights/diffuse_decoder.pt"  # Path to pretrained decoder weights (optional)
+          FROM_PRETRAINED: "diffuse_decoder.pt"  # Path to pretrained decoder weights (optional)
           USE_BN: False  # Use batch normalization in decoder
           DROPOUT: 0.1  # Dropout rate in decoder layers
           OUTPUT_IMAGE_SIZE: [896,896]  # Output image resolution [height, width]
           OUTPUT_CHANNELS: 3  # Number of output channels (3 for RGB diffuse image)
-          DECODER_LR: 0.0 # Custom learning rate for decoder (0.0 = frozen, 1.0 = same as base LR)
+          DECODER_LR: 1.0e-5 # Custom learning rate for decoder (0.0 = frozen, 1.0 = same as base LR)
           NUM_FUSION_BLOCKS_TRAINABLE: 1  # Number of fusion blocks to train (0-4, null = train all if DECODER_LR != 0)
           TRAIN_RGB_HEAD: True  # Whether to train RGB head (true/false, null = train if DECODER_LR != 0)
         highlight:
@@ -35,12 +35,12 @@ parameters:
           DROPOUT: 0.1  # Dropout rate in decoder layers
           OUTPUT_IMAGE_SIZE: [896,896]  # Output image resolution [height, width]
           OUTPUT_CHANNELS: 1  # Number of output channels (1 for highlight mask)
-          DECODER_LR: 5.0e-4  # Custom learning rate for decoder (0.0 = frozen, 1.0 = same as base LR)
+          DECODER_LR: 1.0e-5  # Custom learning rate for decoder (0.0 = frozen, 1.0 = same as base LR)
           NUM_FUSION_BLOCKS_TRAINABLE: null  # Number of fusion blocks to train (0-4, null = train all if DECODER_LR != 0)
       TOKEN_INPAINTER:
         TOKEN_INPAINTER_CLASS: "TokenInpainter_Prior"  # Token inpainter class name
         TOKEN_INPAINTER_MODULE: "token_inpainters"  # Module name to import token inpainter from
-        # FROM_PRETRAINED: "weights/token_inpainter.pth"  # Path to pretrained token inpainter weights (optional)
+        # FROM_PRETRAINED: "token_inpainter.pt"  # Path to pretrained token inpainter weights (optional)
         TOKEN_INPAINTER_LR: 1.0e-4  # Learning rate for token inpainter (can differ from base LR)
         DEPTH: 6  # Number of transformer blocks
         HEADS: 16  # Number of attention heads
@@ -48,8 +48,8 @@ parameters:
         USE_POSITIONAL_ENCODING: True  # Enable 2D sinusoidal positional encodings
         USE_FINAL_NORM: True  # Enable final LayerNorm before output projection
         USE_LOCAL_PRIOR: True  # Blend local mean prior for masked seeds
-        LOCAL_PRIOR_WEIGHT: 0.25  # Weight for local prior blending (1.0 = only mask_token, 0.0 = only local mean)
-        LOCAL_PRIOR_KERNEL: 5  # Kernel size for local prior blending (> 1)
+        LOCAL_PRIOR_WEIGHT: 0.75  # Weight for local prior blending (1.0 = only mask_token, 0.0 = only local mean)
+        LOCAL_PRIOR_KERNEL: 3  # Kernel size for local prior blending (> 1)
         SEED_NOISE_STD: 0.02  # Standard deviation of noise added to masked seeds during training  
   INPAINT_MASK_DILATION:
     value: 15  # Dilation kernel size (pixels) for inpaint mask - Must be odd
@@ -73,7 +73,6 @@ parameters:
         VAL_SCENES: ["val_scene1","val_scene2"]  # Validation scene names
         TARGET_SIZE: [896,896]  # Target image size [height, width]
         RESIZE_MODE: "resize+crop"  # Image resizing mode
-        
         SAMPLE_EVERY_N: 2  # Load every Nth frame
         LOAD_RGB_ONLY: True  # Ignore polarization data if True
 
@@ -82,7 +81,6 @@ parameters:
         # VAL_SCENES: "station"  # Validation scene names (optional)
         TARGET_SIZE: [896,896]  # Target image size [height, width]
         RESIZE_MODE: "resize"  # Image resizing mode
-        
         SAMPLE_EVERY_N: 2  # Load every Nth frame
         LOAD_RGB_ONLY: True  # Ignore polarization data if True
     
@@ -91,7 +89,6 @@ parameters:
         VAL_SCENES: "PSD_Val"  # Validation scene name (string or list)
         TARGET_SIZE: [896,896]  # Target image size [height, width]
         RESIZE_MODE: "resize+crop"  # Image resizing mode
-        
         SAMPLE_EVERY_N: 1  # Load every Nth frame (1 = all frames)
         LOAD_RGB_ONLY: True  # Ignore polarization data if True
 
@@ -127,7 +124,7 @@ parameters:
         VAL_SCENES: ["val"]  # Validation scene names
         TARGET_SIZE: [896,896]  # Target image size [height, width]
         RESIZE_MODE: "resize+crop"  # Image resizing mode
-        SAMPLE_EVERY_N: 10  # Load every Nth frame
+        SAMPLE_EVERY_N: 20  # Load every Nth frame
         LOAD_RGB_ONLY: True  # Ignore polarization data if True
         
         HIGHLIGHT_ENABLE: False  # Enable highlight detection/processing
@@ -143,16 +140,33 @@ parameters:
         RESIZE_MODE: "resize+crop"  # Image resizing mode
         SAMPLE_EVERY_N: 4  # Load every Nth frame
         LOAD_RGB_ONLY: True  # Ignore polarization data if True
-        
 
+      SCANNET:
+        TRAIN_SCENES: ["train"]
+        VAL_SCENES: ["val"]
+        TARGET_SIZE: [896,896]
+        RESIZE_MODE: "resize+crop"
+        SAMPLE_EVERY_N: 10
+        LOAD_RGB_ONLY: True
+        FEW_IMAGES: False
+      
+      # OPENIMAGESV7:
+      #   TRAIN_SCENES: ["thescene"]
+      #   # VAL_SCENES: ["val"]
+      #   TARGET_SIZE: [896,896]
+      #   RESIZE_MODE: "resize+crop"
+      #   SAMPLE_EVERY_N: 10
+      #   LOAD_RGB_ONLY: True
+      #   FEW_IMAGES: False
+        
 
   FEW_IMAGES_OVERRIDE:
     value: False  # If True, override all datasets' FEW_IMAGES to True (for quick debugging across all datasets)
 
   BATCH_SIZE: # Max batch size with img size 896 is 32
-    value: 8 # Number of samples per batch (adjust based on GPU memory)
+    value: 6 # Number of samples per batch (adjust based on GPU memory)
   NUM_WORKERS:
-    value: 12  # Number of data loading worker processes (0 = main process only, "auto" = 90% of CPU affinity)
+    value: 16  # Number of data loading worker processes (0 = main process only, "auto" = 90% of CPU affinity)
   SHUFFLE:
     value: True  # Shuffle training data each epoch (False for validation/test)
   PIN_MEMORY:
@@ -176,7 +190,7 @@ parameters:
   DATASET_HIGHLIGHT_DILATION:
     value: 25  # Dilation kernel size (pixels) for dataset highlight masks
   DATASET_HIGHLIGHT_THRESHOLD:
-    value: 0.9  # Brightness/luminance threshold (0-1) for detecting highlights in dataset images
+    value: 0.85  # Brightness/luminance threshold (0-1) for detecting highlights in dataset images
   DATASET_HIGHLIGHT_USE_LUMINANCE:
     value: True  # If True, use perceptually-weighted luminance (0.299*R + 0.587*G + 0.114*B) for dataset highlights; if False, use simple mean brightness
   HIGHLIGHT_COLOR:
@@ -228,7 +242,7 @@ parameters:
   SPECULAR_LOSS_WEIGHT:
     value: 0.0  # Weight for specular component reconstruction loss
   DIFFUSE_LOSS_WEIGHT:
-    value: 0.0  # Weight for diffuse component reconstruction loss
+    value: 1.0  # Weight for diffuse component reconstruction loss
   HIGHLIGHT_LOSS_WEIGHT:
     value: 1.0  # Weight for highlight mask regression loss
   TOKEN_INPAINT_LOSS_WEIGHT:
@@ -282,7 +296,7 @@ parameters:
 
   ### DIFFUSE HIGHLIGHT PENALTY
   WEIGHT_DIFFUSE_HIGHLIGHT_PENALTY:
-    value: 0.1  # Weight for penalty loss on highlights in diffuse decoder output (0.0 = disabled)
+    value: 0.05 # Weight for penalty loss on highlights in diffuse decoder output (0.0 = disabled)
   DIFFUSE_HL_THRESHOLD:
     value: 0.85  # Brightness/luminance threshold for detecting highlights in diffuse (0.0-1.0)
   DIFFUSE_HL_USE_CHARB:

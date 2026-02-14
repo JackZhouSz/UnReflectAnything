@@ -19,7 +19,7 @@ parameters:
           REASSEMBLE_OUT_CHANNELS: [768,1024,1536,2048]  # Output channels for each decoder stage (DPT-style reassembly)
           REASSEMBLE_FACTORS: [4.0, 2.0, 1.0, 0.5]  # Spatial upsampling factors for each stage
           READOUT_TYPE: "ignore"  # Readout type for DPT decoder ("ignore", "project", etc.)
-          FROM_PRETRAINED: "weights/rgb_decoder.pth"  # Path to pretrained decoder weights (optional)
+          FROM_PRETRAINED: "rgb_decoder.pth"  # Path to pretrained decoder weights (optional)
           USE_BN: False  # Use batch normalization in decoder
           DROPOUT: 0.1  # Dropout rate in decoder layers
           OUTPUT_IMAGE_SIZE: [448,448]  # Output image resolution [height, width]
@@ -42,7 +42,7 @@ parameters:
       TOKEN_INPAINTER:
         TOKEN_INPAINTER_CLASS: "TokenInpainter_Prior"  # Token inpainter class name
         TOKEN_INPAINTER_MODULE: "token_inpainters"  # Module name to import token inpainter from
-        FROM_PRETRAINED: "weights/token_inpainter.pth"  # Path to pretrained token inpainter weights 
+        FROM_PRETRAINED: "token_inpainter.pth"  # Path to pretrained token inpainter weights 
         TOKEN_INPAINTER_LR: 1.0e-5  # Learning rate for token inpainter (can differ from base LR)
         DEPTH: 6  # Number of transformer blocks
         HEADS: 16  # Number of attention heads

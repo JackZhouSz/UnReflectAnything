@@ -1236,7 +1236,7 @@ class Engine:
                         gt_decomposition,
                         pred_decomposition,
                         gt_data,
-                        as_single_panel=True,
+                        as_single_panel=False,
                         also_save_individual_images=False,
                         batch_idx=batch_idx,
                         phase=phase,

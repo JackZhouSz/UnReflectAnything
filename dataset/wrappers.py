@@ -18,7 +18,7 @@ _IDENTITY_KEY_MAP = {
     "RGB_DIR_NAME": "rgb_dir_name",
     "POL_DIR_NAME": "pol_dir_name",
     "DIFFUSE_DIR_NAME": "diffuse_dir_name",
-    "LOAD_PAIRED_HIGHLIGHTS": "load_paired_highlights",
+    "LOAD_HIGHLIGHT": "load_highlight",
 }
 _GENERIC = {
     "root_dir": "$DATASET_DIR/PLACEHOLDER/",
@@ -28,7 +28,7 @@ _GENERIC = {
     "rgb_dir_name": "rgb",
     "pol_dir_name": "pol",
     "diffuse_dir_name": "diffuse",
-    "load_paired_highlights": False,
+    "load_highlight": False,
 }
 
 
@@ -118,7 +118,7 @@ DATASET_DEFAULTS: Dict[str, Dict[str, Any]] = {
         "ROOT_DIR": "$DATASET_DIR/SHIQ/",
         "RGB_DIR_NAME": "diffuse",
         "HIGHLIGHT_DIR_NAME": "highlight",
-        "LOAD_PAIRED_HIGHLIGHTS": True,
+        "LOAD_HIGHLIGHT": True,
         "RGB_EXT": ".png",
         
     },

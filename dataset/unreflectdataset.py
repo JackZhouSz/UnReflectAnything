@@ -84,9 +84,9 @@ class UnReflectAnything_Dataset(Dataset):
         # RGB-only mode
         load_rgb_only: bool = False,  # Force loading only RGB data, ignore polarization
         # Return file paths in output
-        return_metadata: bool = True,  # If True, include file paths in returned dictionary
+        return_metadata: bool = False,  # If True, include file paths in returned dictionary
         # Paired highlight images (grayscale, same name as diffuse in highlight_dir)
-        load_paired_highlights: bool = False,
+        load_highlight: bool = False,
         # Deprecated parameters (for backward compatibility)
         # Highlight detection (optional)
         highlight_enable: bool = False,
@@ -104,7 +104,7 @@ class UnReflectAnything_Dataset(Dataset):
         self.transform = transform
         self.load_rgb_only = load_rgb_only
         self.return_metadata = return_metadata
-        self.load_paired_highlights = load_paired_highlights
+        self.load_highlight = load_highlight
         self.rgb_dir_name = rgb_dir_name
         self.pol_dir_name = pol_dir_name
         self.diffuse_dir_name = diffuse_dir_name
@@ -491,12 +491,12 @@ class UnReflectAnything_Dataset(Dataset):
 
             filestack_iterator = (
                 zip(rgb_files, highlight_files)
-                if self.load_paired_highlights
+                if len(highlight_files) > 0
                 else rgb_files
             )
             for filestack in filestack_iterator:
-                rgb_file = filestack[0]
-                highlight_file = filestack[1] if self.load_paired_highlights else None
+                rgb_file = filestack[0] if isinstance(filestack, tuple) else filestack
+                highlight_file = filestack[1] if self.load_highlight else None
                 raw_path = os.path.join(rgb_dir, rgb_file)
                 # Determine diffuse path if available
                 diffuse_path = None
@@ -969,7 +969,7 @@ class UnReflectAnything_Dataset(Dataset):
             Dictionary containing:
             - Polarization data: 'I0', 'I45', 'I90', 'I135', 'S0', 'S1', 'S2', 'DoLP', 'AoP', 'f_spec' (if available)
             - Image data: 'raw', 'specular', 'diffuse' (with backward-compatible alias 'rgb' == 'raw')
-            - Optional 'highlight': [1, H, W] grayscale tensor (if load_paired_highlights=True and highlight file exists)
+            - Optional 'highlight': [1, H, W] grayscale tensor (if load_highlight=True and highlight file exists)
             - Camera data: 'intrinsics' [3, 3]
             - File paths: 'filepaths' dict with keys 'raw_path', 'pol_path', 'diffuse_path', 'intrinsics_path' (if return_metadata=True)
             All image tensors have shape [C, H, W] where H, W match target_size if specified
@@ -985,7 +985,7 @@ class UnReflectAnything_Dataset(Dataset):
 
         # Load data (potentially from cache)
         intrinsics = self._load_intrinsics(intrinsics_path)
-        if self.load_paired_highlights and highlight_path is not None:
+        if self.load_highlight and highlight_path is not None:
             sample_highlight = self._load_highlight(highlight_path)
         else:
             sample_highlight = None
@@ -1010,6 +1010,9 @@ class UnReflectAnything_Dataset(Dataset):
             sample = {**raw_data, "intrinsics": intrinsics}
         if sample_highlight is not None:
             sample["highlight"] = sample_highlight
+        elif sample_highlight is None and self.load_highlight:
+            sample["highlight"] = torch.zeros_like(sample["diffuse"])[0].unsqueeze(0)
+            highlight_path = "None"
         original_raw_size = sample["raw"].shape
         # Optional highlight detection and cropping on full resolution
         if self.highlight_enabled and "raw" in sample:
@@ -1149,7 +1152,7 @@ class UnReflectAnything_Dataset(Dataset):
                 "raw_path": raw_path,
                 "orig_size": torch.tensor(original_raw_size),
             }
-            if self.load_paired_highlights:
+            if self.load_highlight:
                 metadata["highlight_path"] = highlight_path
             if not self.load_rgb_only:
                 metadata["pol_path"] = pol_path

@@ -483,7 +483,7 @@ class HighlightRender(nn.Module):
         # Add channel dimension to depth
         depth = depth.unsqueeze(1)  # [B,1,H,W]
 
-        return depth, -normals, intrinsics
+        return depth, normals, intrinsics
 
     def sample_light_source(
         self,
@@ -641,7 +641,7 @@ class HighlightRender(nn.Module):
 
         # Reconstruct 3D points and view direction
         P = self.backproject_depth(depth, K)  # [B,3,H,W]
-        v = self.normalize_vector(P)  # [B,3,H,W] surface->camera direction
+        v = self.normalize_vector(-P)  # [B,3,H,W] surface->camera direction
 
         # Sample random light position and compute light direction
         L = light_pos.view(B, 3, 1, 1)  # [B,3,1,1]
@@ -850,7 +850,7 @@ class HighlightRender(nn.Module):
             )  # [B,3]
         # 1) Compute viewing and lighting geometry
         v, l, n, nl, nv, light_pos, pcloud = self.compute_viewing_lighting_geometry(
-            depth, normals, K, light_pos * torch.tensor([-1, -1, 1]).to(device)
+            depth, normals, K, light_pos #* torch.tensor([-1, -1, 1]).to(device)
         )
 
         # 2) Compute Blinn-Phong specular lobe with Fresnel modulation

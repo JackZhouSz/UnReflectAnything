@@ -61,7 +61,7 @@ def create_visualization_images(
     if as_single_panel:
         visualization_dict = {}
         if diffuse_only:
-            all_keys = ["diffuse","highlight"]
+            all_keys = ["diffuse","rgb_highlighted"]
         else:
             all_keys = list(
                 sorted(set(pred_decomposition.keys()) | set(gt_decomposition.keys()))

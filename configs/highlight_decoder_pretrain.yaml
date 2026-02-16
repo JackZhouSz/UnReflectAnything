@@ -54,16 +54,22 @@ parameters:
         VAL_SCENES: ["test"]
         RESIZE_MODE: "resize+crop"
         TARGET_SIZE: [896,896]
-        SAMPLE_EVERY_N: 1
-        LOAD_PAIRED_HIGHLIGHTS: True
-        LOAD_RGB_ONLY: True
-
+        SAMPLE_EVERY_N: 2
       
-  FEW_IMAGES_ALL_DATASETS:
-    value: False  # If True, override all datasets' FEW_IMAGES to True (for quick debugging across all datasets)
+      SCARED:
+        VAL_SCENES: ["v22","v23","v24","v25","v26","v27","v28","v29","v30","v31","v32","v33","v34"]  # Validation scene names
+        RESIZE_MODE: "resize+crop"  # Image resizing mode
+        SAMPLE_EVERY_N: 4  # Load every Nth frame
+              
+      ALL_DATASETS:
+        FEW_IMAGES: False
+        TARGET_SIZE: [896,896]
+        LOAD_RGB_ONLY: True
+        LOAD_HIGHLIGHT: True
+
 
   BATCH_SIZE: # Max batch size with img size 896 is 32
-    value: 12 # Number of samples per batch (adjust based on GPU memory)
+    value: 20 # Number of samples per batch (adjust based on GPU memory)
   NUM_WORKERS:
     value: 12  # Number of data loading worker processes (0 = main process only, "auto" = 90% of CPU affinity)
   SHUFFLE:
@@ -77,9 +83,9 @@ parameters:
   MOGE_MODEL:
     value: "Ruicheng/moge-2-vits-normal"  # MoGe model name for normal estimation (HuggingFace format)
   SURFACE_ROUGHNESS:
-    value: 8.0  # Blinn-Phong surface roughness exponent (higher = sharper highlights)
+    value: 100.0  # Blinn-Phong surface roughness exponent (higher = sharper highlights)
   INTENSITY:
-    value: 0.0  # Specular highlight intensity multiplier
+    value: 0.8  # Specular highlight intensity multiplier
   LIGHT_DISTANCE_RANGE:
     value: [0.0, 1]  # Range for light source distance sampling [min, max] (normalized)
   LIGHT_LEFT_RIGHT_ANGLE:

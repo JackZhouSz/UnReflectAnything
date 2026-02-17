@@ -633,7 +633,7 @@ class UnReflect_Model(nn.Module):
                 param.requires_grad = False
             self.dinov3.eval()
             if kwargs.get("verbose", False):
-                print("RGB Encoder frozen due to RGB_ENCODER_LR=0.0")
+                logger.info("RGB Encoder frozen due to RGB_ENCODER_LR=0.0")
         else:
             # Ensure encoder is trainable if LR is set (or None, which will be handled in optimizer)
             self.dinov3.train()
@@ -877,12 +877,12 @@ class UnReflect_Model(nn.Module):
 
                     if not has_issues and loaded_keys == total_model_keys:
                         if kwargs.get("verbose", False):
-                            print(
+                            logger.info(
                                 f"✓ Decoder '{decoder_name}': Successfully loaded all {loaded_keys} state dict keys from {pretrained_path}"
                             )
                     else:
                         if kwargs.get("verbose", False):
-                            print(
+                            logger.info(
                                 f"⚠ Decoder '{decoder_name}': Loaded {loaded_keys}/{total_model_keys} state dict keys from {pretrained_path}"
                             )
                         if incompatible_keys:
@@ -892,12 +892,12 @@ class UnReflect_Model(nn.Module):
                                 )
                         if missing_keys:
                             if kwargs.get("verbose", False):
-                                print(
+                                logger.info(
                                     f"  - {len(missing_keys)} keys were missing from checkpoint"
                                 )
                         if unexpected_keys:
                             if kwargs.get("verbose", False):
-                                print(
+                                logger.info(
                                     f"  - {len(unexpected_keys)} unexpected keys in checkpoint"
                                 )
 
@@ -928,7 +928,7 @@ class UnReflect_Model(nn.Module):
                         param.requires_grad = False
                     # Don't set to eval mode yet - we may selectively unfreeze below
                     if kwargs.get("verbose", False):
-                        print(
+                        logger.info(
                             f"Loaded pre-trained decoder weights from {pretrained_path}"
                         )
 
@@ -1034,7 +1034,7 @@ class UnReflect_Model(nn.Module):
 
                         decoder.train()
                         if kwargs.get("verbose", False):
-                            print(
+                            logger.info(
                                 f"Decoder '{decoder_name}' selectively frozen/unfrozen"
                             )
                     else:
@@ -1347,8 +1347,8 @@ class UnReflect_Model_TokenInpainter(UnReflect_Model):
     def forward(
         self,
         model_input_dict,
-        inpaint_mask_threshold=0.3,
-        inpaint_mask_dilation=None,
+        threshold=0.3,
+        dilation=None,
         just_extract_tokens=False,
     ):
         if isinstance(
@@ -1357,32 +1357,22 @@ class UnReflect_Model_TokenInpainter(UnReflect_Model):
             model_input_dict = {"rgb": model_input_dict}
             model_input_dict["inpaint_mask_dilation"] = (
                 model_input_dict["rgb"].shape[-1] // (self.patch_size * 4)
-                if inpaint_mask_dilation is None
-                else inpaint_mask_dilation
+                if dilation in [None, -1]
+                else dilation
             )
-            model_input_dict["inpaint_mask_threshold"] = inpaint_mask_threshold
+            model_input_dict["inpaint_mask_threshold"] = threshold
         elif isinstance(model_input_dict, dict):  # Passed a dict as input
-            if (
-                inpaint_mask_dilation is None
-                and "inpaint_mask_dilation" not in model_input_dict
-            ):
-                model_input_dict["inpaint_mask_dilation"] = model_input_dict[
-                    "rgb"
-                ].shape[-1] // (self.patch_size * 4)
-            elif (
-                inpaint_mask_dilation is not None
-                and "inpaint_mask_dilation" not in model_input_dict
-            ):
-                model_input_dict["inpaint_mask_dilation"] = inpaint_mask_dilation
-            elif (
-                inpaint_mask_dilation is not None
-                and "inpaint_mask_dilation" in model_input_dict
-            ):
-                model_input_dict["inpaint_mask_dilation"] = model_input_dict[
-                    "inpaint_mask_dilation"
-                ]
+            # inpaint_mask_dilation: None/-1 → auto from rgb size; else dict wins over arg
+            if dilation in (None, -1):
+                model_input_dict["inpaint_mask_dilation"] = (
+                    model_input_dict["rgb"].shape[-1] // (self.patch_size * 4)
+                )
+            else:
+                model_input_dict["inpaint_mask_dilation"] = model_input_dict.get(
+                    "inpaint_mask_dilation", dilation
+                )
             if "inpaint_mask_threshold" not in model_input_dict:
-                model_input_dict["inpaint_mask_threshold"] = inpaint_mask_threshold
+                model_input_dict["inpaint_mask_threshold"] = threshold
         model_input_dict["inpaint_mask_dilation"] = int(
             max(1, model_input_dict["inpaint_mask_dilation"])
         )
@@ -1409,6 +1399,7 @@ class UnReflect_Model_TokenInpainter(UnReflect_Model):
             "inpaint_mask_override", outputs["highlight"]
         )
 
+        model_input_dict["inpaint_mask_dilation"] = model_input_dict["inpaint_mask_dilation"]+1 if model_input_dict["inpaint_mask_dilation"] % 2 == 0 else model_input_dict["inpaint_mask_dilation"]
         pixel_inpaint_mask = (
             torch.nn.functional.max_pool2d(
                 pixel_inpaint_mask.float(),
@@ -1418,6 +1409,7 @@ class UnReflect_Model_TokenInpainter(UnReflect_Model):
             )
             > model_input_dict["inpaint_mask_threshold"]
         )
+        outputs["highlight_mask"] = pixel_inpaint_mask.float()
         patch_inpaint_mask = pixel_mask_to_patch_mask(
             pixel_inpaint_mask,
             patch_size=self.patch_size,
@@ -1430,13 +1422,14 @@ class UnReflect_Model_TokenInpainter(UnReflect_Model):
             patch_inpaint_mask = feather_token_mask(
                 patch_inpaint_mask, radius_tokens=1, smoothstep=True
             )
-
-        # 1 if the patch needs to be inpainted, 0 if not
-        # outputs["patch_mask"] = pixel_inpaint_mask.int()
+            
         patch_grid_size = int(patch_inpaint_mask.shape[1] ** 0.5)
         outputs["patch_mask"] = patch_inpaint_mask.reshape(
-            1, 1, patch_grid_size, patch_grid_size
-        ).int()
+            -1, 1, patch_grid_size, patch_grid_size
+        ).float()
+        # 1 if the patch needs to be inpainted, 0 if not
+        # outputs["patch_mask"] = pixel_inpaint_mask.int()
+
         ### THIRD: Inpaint the tokens in the mask
         # Detect if using soft masks (float) or boolean masks
         is_soft_mask = patch_inpaint_mask.dtype.is_floating_point

@@ -119,7 +119,7 @@ def create_visualization_images(
     sample: Optional[dict],
     add_image_fn: AddImageFn,
     as_single_panel: bool = True,
-    diffuse_only: bool = True,
+    simplified: bool = True,
     batch_idx: int = 0,
     phase: Optional[str] = None,
     test_idx: Optional[int] = None,
@@ -134,8 +134,8 @@ def create_visualization_images(
     
     if as_single_panel:
         visualization_dict = {}
-        if diffuse_only:
-            all_keys = ["diffuse","rgb_highlighted"]
+        if simplified:
+            all_keys = ["diffuse","highlight","token_sup"]
         else:
             all_keys = list(
                 sorted(set(pred_decomposition.keys()) | set(gt_decomposition.keys()))

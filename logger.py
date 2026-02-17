@@ -275,7 +275,7 @@ class CustomLogger:
         extra["context"] = file_context
         kwargs["extra"] = extra
 
-        # Log with the specified level
+        # Log with the specified level (use .log(level, msg) not .info(level, msg))
         self.logger.log(level, rich_message, **kwargs)
 
     def info(self, *message_args, context=None, style=None, end="\n", **kwargs):

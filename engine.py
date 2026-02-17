@@ -866,15 +866,15 @@ class Engine:
                     "inpaint_mask_threshold": self.config.INPAINT_MASK_THRESHOLD,
                     "inpaint_mask_dilation": self.config.INPAINT_MASK_DILATION,
                 }
-                if self._distribute == "dp":
-                    pred_decomposition = self.model(
-                        model_input["rgb"],
-                        model_input["inpaint_mask_override"],
-                        model_input["inpaint_mask_threshold"],
-                        model_input["inpaint_mask_dilation"],
-                    )
-                else:
-                    pred_decomposition = self.model(model_input)
+                # if self._distribute == "dp":
+                #     pred_decomposition = self.model(
+                #         model_input["rgb"],
+                #         model_input["inpaint_mask_override"],
+                #         model_input["inpaint_mask_threshold"],
+                #         model_input["inpaint_mask_dilation"],
+                #     )
+                # else:
+                pred_decomposition = self.model(model_input)
 
                 ### COMPUTE LOSS FUNCTION
                 losses = self.loss(
@@ -1032,7 +1032,7 @@ class Engine:
                         gt_decomposition,
                         pred_decomposition,
                         gt_data,
-                        as_single_panel=False,
+                        as_single_panel=True,
                         also_save_individual_images=False,
                         batch_idx=batch_idx,
                         phase=phase,

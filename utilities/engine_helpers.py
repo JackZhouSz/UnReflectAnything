@@ -1,14 +1,16 @@
 """
 Helpers for the training Engine: compositing, metrics formatting, image conversion,
-visualization logging, tensor cleanup, and checkpoint loading.
+visualization logging, tensor cleanup, checkpoint loading, and evaluation metrics.
 """
 import os
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Dict, Optional
 
 import pandas as pd
 import torch
 import torchvision.transforms as transforms
 import wandb
+
+from metrics import mse_metric, psnr_metric, ssim_metric
 
 
 def composite_specular_diffuse(
@@ -46,6 +48,59 @@ def prepare_metrics_for_wandb(metrics: dict, phase: str) -> dict:
         else:
             formatted[f"{phase}/{k}"] = v
     return formatted
+
+
+def compute_eval_metrics(
+    pred_decomposition: dict,
+    gt_decomposition: dict,
+    phase: str,
+    pixel_supervision_mask: Optional[torch.Tensor] = None,
+) -> Dict[str, float]:
+    """
+    Compute PSNR/SSIM/MSE for diffuse, specular, and rgb_highlighted (vectorized over batch).
+
+    Args:
+        pred_decomposition: Model output dict (diffuse, specular, rgb_highlighted).
+        gt_decomposition: Ground truth dict with same keys.
+        phase: "Training", "Validation", or "Test". Mask used only when "Training".
+        pixel_supervision_mask: Optional [B, 1, H, W] mask for diffuse metrics.
+
+    Returns:
+        Dict of metric names to float values (e.g. "PSNR/diffuse", "SSIM/specular").
+    """
+    out: Dict[str, float] = {}
+    eval_mask = pixel_supervision_mask if phase == "Training" else None
+    try:
+        if "diffuse" in pred_decomposition and "diffuse" in gt_decomposition:
+            pdiff = pred_decomposition["diffuse"].detach()
+            gt = gt_decomposition["diffuse"].detach()
+            out["PSNR/diffuse"] = float(
+                psnr_metric(pdiff, gt, mask=eval_mask, reduction="mean").item()
+            )
+            out["SSIM/diffuse"] = float(
+                ssim_metric(pdiff, gt, mask=eval_mask, reduction="mean").item()
+            )
+            out["MSE/diffuse"] = float(
+                mse_metric(pdiff, gt, mask=eval_mask, reduction="mean").item()
+            )
+        if "specular" in pred_decomposition and "specular" in gt_decomposition:
+            ps = pred_decomposition["specular"].detach()
+            gs = gt_decomposition["specular"].detach()
+            out["PSNR/specular"] = float(psnr_metric(ps, gs, reduction="mean").item())
+            out["SSIM/specular"] = float(ssim_metric(ps, gs, reduction="mean").item())
+            out["MSE/specular"] = float(mse_metric(ps, gs, reduction="mean").item())
+        if (
+            "rgb_highlighted" in pred_decomposition
+            and "rgb_highlighted" in gt_decomposition
+        ):
+            pr = pred_decomposition["rgb_highlighted"].detach()
+            gr = gt_decomposition["rgb_highlighted"].detach()
+            out["PSNR/recon"] = float(psnr_metric(pr, gr, reduction="mean").item())
+            out["SSIM/recon"] = float(ssim_metric(pr, gr, reduction="mean").item())
+            out["MSE/recon"] = float(mse_metric(pr, gr, reduction="mean").item())
+    except Exception:
+        pass
+    return out
 
 
 def to_cpu_image(tensor: Optional[torch.Tensor], batch_idx: int = 0):

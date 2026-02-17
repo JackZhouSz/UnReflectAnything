@@ -1,12 +1,14 @@
 """
-Visualization helpers for the training Engine: building comparison panels and
-individual images for wandb logging.
+Visualization helpers for the training Engine: building comparison panels,
+individual images for wandb logging, and preparing decomposition dicts for logging.
 """
 import gc
+import math
 from typing import Any, Callable, Optional
 
 import torch
 
+from utilities.model import patch_mask_to_pixel_mask
 from utilities.visualization import panelize, rgb
 
 
@@ -37,6 +39,78 @@ def _prepare_img_tensor(t: Optional[torch.Tensor]) -> tuple[Optional[torch.Tenso
 AddImageFn = Callable[
     [dict, str, Any, str, int, Optional[str], Optional[int]], None
 ]
+
+
+def prepare_decomposition_dicts_for_logging(
+    gt_decomposition: dict,
+    pred_decomposition: dict,
+    diffuse_teacher_tokens: list,
+    patch_inpaint_mask: torch.Tensor,
+    patch_supervision_mask: torch.Tensor,
+    pixel_supervision_mask: torch.Tensor,
+    diffuse: torch.Tensor,
+    image_size: int,
+) -> None:
+    """
+    Prepare gt_decomposition and pred_decomposition for wandb image logging:
+    add token_inpaint, token_sup, pixel_supervision_mask visuals and remove debug keys.
+    Mutates both dicts in place.
+    """
+    if "tokens_teacher" not in gt_decomposition or "tokens_completed" not in pred_decomposition:
+        return
+    # Shapes: [B, npatches, embed_dim]
+    _, npatches, embed_dim = gt_decomposition["tokens_teacher"][-1].shape
+    patch_resolution = int(math.sqrt(npatches))
+    resize = (image_size, image_size)
+    teacher_last = diffuse_teacher_tokens[-1]
+    teacher_chw = (
+        teacher_last.reshape(-1, patch_resolution, patch_resolution, embed_dim)
+        .permute(0, 3, 1, 2)
+        .detach()[0]
+    )
+    _, pca = rgb(teacher_chw, as_tensor=True, return_pca=True)
+
+    def _token_rgb(tokens_chw, pca_obj, resize_wh, blackout=False):
+        return rgb(
+            tokens_chw,
+            pca=pca_obj,
+            resize=resize_wh,
+            as_tensor=True,
+            blackout=blackout,
+        )
+
+    inpaint_pixel = patch_mask_to_pixel_mask(patch_inpaint_mask, patch_size=16).int()[0]
+    sup_pixel = patch_mask_to_pixel_mask(patch_supervision_mask, patch_size=16).int()[0]
+    sup_inpaint = sup_pixel * inpaint_pixel
+
+    pred_last = (
+        pred_decomposition["tokens_completed"][-1]
+        .reshape(-1, patch_resolution, patch_resolution, embed_dim)
+        .permute(0, 3, 1, 2)
+        .detach()[0]
+    )
+
+    gt_decomposition["token_inpaint"] = _token_rgb(teacher_chw, pca, resize) * inpaint_pixel
+    pred_decomposition["token_inpaint"] = _token_rgb(pred_last, pca, resize) * inpaint_pixel
+    gt_decomposition["pixel_supervision_mask"] = rgb(
+        pixel_supervision_mask.int(),
+        resize=resize,
+        as_tensor=True,
+        colormap="gray",
+    )
+    pred_decomposition["pixel_supervision_mask"] = rgb(
+        pixel_supervision_mask.int() * diffuse,
+        resize=resize,
+        as_tensor=True,
+    )
+    gt_decomposition["token_sup"] = _token_rgb(teacher_chw, pca, resize) * sup_inpaint
+    pred_decomposition["token_sup"] = _token_rgb(pred_last, pca, resize) * sup_inpaint
+
+    for key in ("masked_diffuse", "patch_mask_sup", "masked_tokens", "supervision_mask", "tokens_teacher", "specular"):
+        gt_decomposition.pop(key, None)
+    for key in ("tokens_completed", "tokens_inpainted"):
+        pred_decomposition.pop(key, None)
+    pred_decomposition.pop("patch_mask", None)
 
 
 def create_visualization_images(

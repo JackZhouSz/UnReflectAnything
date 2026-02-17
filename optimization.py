@@ -43,36 +43,6 @@ class Adam(torch.optim.Adam):
         return modelstr
 
 
-# Custom implementation of SGLD optimizer, extending a base SGLD class.
-# class SGLD(SGLD):
-#     def __init__(self, *args, **kwargs):
-#         """
-#         Initializes the SGLD optimizer, setting the momentum and temperature based on kwargs.
-#         Note: Inherits from a base SGLD class, not shown in the provided code.
-#         """
-#         super(SGLD, self).__init__(
-#             momentum=0.9, temperature=kwargs["lr"], *args, **kwargs
-#         )
-#         self.kwargs = kwargs
-#         self.kwargs["temperature"] = kwargs[
-#             "lr"
-#         ]  # Adjust temperature to match learning rate.
-#         self.kwargs["momentum"] = 0.9  # Set momentum to a fixed value.
-
-#     def __str__(self) -> str:
-#         """
-#         Generates a string representation of the SGLD optimizer, including its configuration.
-
-#         Returns:
-#             str: A formatted string listing the optimizer's configuration.
-#         """
-#         modelstr = f"{self.__class__.__name__}(\n"
-#         for k in self.kwargs.keys():
-#             modelstr += f"    {k}: {self.kwargs.get(k, '')} \n"
-#         modelstr += ")"
-#         return modelstr
-
-
 # Custom implementation of SGD optimizer, extending torch.optim.SGD.
 class SGD(torch.optim.SGD):
     def __init__(self, *args, **kwargs):
@@ -285,7 +255,14 @@ class EarlyStopping:
                 self.counter = 0
 
     def save_checkpoint(
-        self, val_loss, model, epoch, optimizer=None, config=None, wandb=None
+        self,
+        val_loss,
+        model,
+        epoch,
+        optimizer=None,
+        config=None,
+        wandb=None,
+        filename_override=None,
     ):
         """Saves model when validation loss decrease."""
         if self.verbose:
@@ -294,12 +271,16 @@ class EarlyStopping:
                     f"Validation Loss IMPROVES [{self.val_loss_min:.6f} --> {val_loss:.6f}], saving checkpoint",
                     end=" ",
                 )
-
+        
         self.val_loss_min = val_loss
 
         try:
-            # Save complete checkpoint locally first
-            checkpoint_path = os.path.join(self.checkpointpath, "full_model_weights.pt")
+            checkpoint_path = os.path.join(
+                self.checkpointpath,
+                "full_model_weights.pt"
+                if filename_override is None
+                else filename_override,
+            )
             model._forward_hooks.clear()
 
             # Create complete checkpoint with all required keys
@@ -316,38 +297,6 @@ class EarlyStopping:
             }
 
             torch.save(checkpoint, checkpoint_path, pickle_module=dill)
-
-            # Get run name for artifact path
-            saveto_statedict = f"ARTIFACTS/{self.runname}.pt"
-
-            # Upload to GCS if bucket is configured
-            if self.bucket:
-                logger.set_context("GCLOUD")
-                try:
-                    # Verify bucket access before attempting upload
-
-                    blob = self.bucket.blob(saveto_statedict)
-                    blob.upload_from_filename(checkpoint_path)
-                    if self.verbose:
-                        logger.info(
-                            f"Saved model state dict to gs://{self.bucket_name}/{saveto_statedict}"
-                        )
-                    # Remove local file after successful upload
-                    os.remove(checkpoint_path)
-                except Exception as e:
-                    logger.warning(f"Error saving to GCS: {str(e)}")
-                    logger.warning("Debug info:")
-                    logger.warning(f"- Bucket name: {self.bucket_name}")
-                    logger.warning(f"- File path: {checkpoint_path}")
-                    logger.warning(f"- Target path: {saveto_statedict}")
-                    logger.warning(f"Checkpoint kept locally at: {checkpoint_path}")
-
-                    # Log the full error details
-                    import traceback
-
-                    logger.warning("Full error traceback:")
-                    logger.warning(traceback.format_exc())
-
         except Exception as e:
             logger.error(f"Error in save_checkpoint: {str(e)}")
             raise

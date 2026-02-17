@@ -342,3 +342,40 @@ def gpuClean(frame_up=1, exclude_vars=None, verbose=False):
         console.print("[yellow]No tensors were cleaned up[/yellow]")
 
     return freed_count, total_memory_freed
+
+def get_slurm_time_left_minutes():
+    """
+    Returns the number of minutes left in the current SLURM job,
+    or None if not inside a SLURM job or on error.
+    """
+    job_id = os.environ.get('SLURM_JOB_ID')
+
+    if not job_id:
+        return None
+
+    try:
+        # squeue returns time left in format like: "1-12:34:56" or "12:34:56" or "34:56"
+        result = subprocess.check_output(
+            ['squeue', '-h', '-j', job_id, '--format', '%L'],
+            text=True
+        ).strip()
+
+        # Parse SLURM format: [DD-]HH:MM:SS or HH:MM:SS or MM:SS
+        if '-' in result:
+            days, hms = result.split('-')
+            h, m, s = map(int, hms.split(':'))
+            total_minutes = int(days) * 24 * 60 + h * 60 + m + (s > 0)
+        else:
+            parts = list(map(int, result.split(':')))
+            if len(parts) == 3:
+                h, m, s = parts
+                total_minutes = h * 60 + m + (s > 0)
+            elif len(parts) == 2:
+                m, s = parts
+                total_minutes = m + (s > 0)
+            else:
+                return None  # Unexpected format
+
+        return total_minutes
+    except Exception:
+        return None

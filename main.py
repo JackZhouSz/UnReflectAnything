@@ -218,13 +218,11 @@ def run_pipeline(mode: str = "train", config: Optional[Dict[str, Any]] = None) -
                 logger.info(
                     f"Resuming training from run: {args.resume_run}", context="RESUME"
                 )
-
+                # Create datasets for training
+                dataset = create_datasets_from_config(config)
                 # Create model
                 model = create_model_from_config(config, DEVICE)
                 model = wrap_model_for_parallelization(model, config)
-
-                # Create datasets for training
-                dataset = create_datasets_from_config(config)
 
                 # Discover existing run directories and latest checkpoint without
                 # creating a new WandB run or new run directory.
@@ -295,13 +293,14 @@ def run_pipeline(mode: str = "train", config: Optional[Dict[str, Any]] = None) -
                 engine.test()
 
             else:
+                
+                # Create datasets for training
+                dataset = create_datasets_from_config(config)
+                
                 # Normal training (new run)
                 # Create model
                 model = create_model_from_config(config, DEVICE)
                 model = wrap_model_for_parallelization(model, config)
-
-                # Create datasets for training
-                dataset = create_datasets_from_config(config)
 
                 # Initialize engine
                 engine = Engine(

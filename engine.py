@@ -1,6 +1,7 @@
 import gc
 import os
 import shutil
+import glob
 from contextlib import contextmanager, nullcontext
 from typing import Optional, Union
 
@@ -17,13 +18,12 @@ import wandb
 from logger import get_logger
 from losses import UnReflectLoss
 from highlight_render import HighlightRender
-from utilities.visualization import rgb
 from utilities.ablation import Ablation
-from metrics import mse_metric, psnr_metric, ssim_metric
-from utilities.model import pixel_mask_to_patch_mask, patch_mask_to_pixel_mask
+from utilities.model import pixel_mask_to_patch_mask
 from utilities import engine_helpers
 from utilities import engine_memory
 from utilities import engine_visualization as engine_viz
+from utilities.system_ops import get_slurm_time_left_minutes
 
 ablation = Ablation(False)
 
@@ -78,9 +78,7 @@ class Engine:
         # DDP: only set when config.DISTRIBUTE == "ddp"
         self._rank = rank
         self._world_size = world_size
-        self._is_ddp = (
-            world_size is not None and world_size > 1
-        )
+        self._is_ddp = world_size is not None and world_size > 1
         self._distribute = config.get("DISTRIBUTE", "single")
 
         # Initialize device and directories
@@ -173,7 +171,6 @@ class Engine:
             weight_diffuse_loss=self.config.DIFFUSE_LOSS_WEIGHT,
             weight_highlight_loss=self.config.HIGHLIGHT_LOSS_WEIGHT,
             weight_image_reconstruction=self.config.IMAGE_RECONSTRUCTION_LOSS_WEIGHT,
-
             # Highlight regression loss parameters
             hlreg_w_l1=float(self.config.get("HLREG_W_L1", 1.0)),
             hlreg_use_charb=bool(self.config.get("HLREG_USE_CHARB", True)),
@@ -193,7 +190,9 @@ class Engine:
             seam_use_charb=bool(self.config.get("SEAM_USE_CHARB", True)),
             seam_weight_grad=float(self.config.get("SEAM_WEIGHT_GRAD", 0.2)),
             # Token-space loss parameters
-            weight_token_inpaint=float(self.config.get("TOKEN_INPAINT_LOSS_WEIGHT", 1.0)),
+            weight_token_inpaint=float(
+                self.config.get("TOKEN_INPAINT_LOSS_WEIGHT", 1.0)
+            ),
             token_feat_alpha=float(self.config.get("TOKEN_FEAT_ALPHA", 0.5)),
             # Diffuse highlight penalty parameters
             weight_diffuse_highlight_penalty=float(
@@ -279,7 +278,7 @@ class Engine:
 
             # Save checkpoint every few epochs (rank 0 only when DDP)
             if (e + 1) % self.config.get("SAVE_INTERVAL", 10) == 0:
-                self._save_checkpoint(e)
+                self.save_checkpoint(e)
 
             ### BREAK IF EARLYSTOP
             if is_overfitting == "EARLYSTOP":
@@ -339,7 +338,9 @@ class Engine:
             if self._is_ddp:
                 # Broadcast early_stop from rank 0 to all ranks
                 early_stop_tensor = torch.tensor(
-                    1 if (self._is_main_process() and self.earlystopping.early_stop) else 0,
+                    1
+                    if (self._is_main_process() and self.earlystopping.early_stop)
+                    else 0,
                     device=self.device,
                     dtype=torch.int64,
                 )
@@ -862,16 +863,15 @@ class Engine:
                 model_input = {
                     "rgb": gt_decomposition["rgb_highlighted"],
                     "inpaint_mask_override": pixel_inpaint_mask,
+                    "inpaint_mask_threshold": self.config.INPAINT_MASK_THRESHOLD,
                     "inpaint_mask_dilation": self.config.INPAINT_MASK_DILATION,
                 }
                 if self._distribute == "dp":
                     pred_decomposition = self.model(
                         model_input["rgb"],
                         model_input["inpaint_mask_override"],
-                        model_input.get(
-                            "inpaint_mask_dilation",
-                            self.config.INPAINT_MASK_DILATION,
-                        ),
+                        model_input["inpaint_mask_threshold"],
+                        model_input["inpaint_mask_dilation"],
                     )
                 else:
                     pred_decomposition = self.model(model_input)
@@ -990,65 +990,13 @@ class Engine:
                             ]
 
                 # Compute evaluation metrics (vectorized over batch)
-                try:
-                    # Use same mask as loss for diffuse comparisons during Training; None otherwise
-                    eval_mask = pixel_supervision_mask if phase == "Training" else None
-                    if (
-                        "diffuse" in pred_decomposition
-                        and "diffuse" in gt_decomposition
-                    ):
-                        pdiff = pred_decomposition["diffuse"].detach()
-                        gt = gt_decomposition["diffuse"].detach()
-                        # Shapes: [B, C, H, W]
-                        metrics["PSNR/diffuse"] = float(
-                            psnr_metric(
-                                pdiff, gt, mask=eval_mask, reduction="mean"
-                            ).item()
-                        )
-                        metrics["SSIM/diffuse"] = float(
-                            ssim_metric(
-                                pdiff, gt, mask=eval_mask, reduction="mean"
-                            ).item()
-                        )
-                        metrics["MSE/diffuse"] = float(
-                            mse_metric(
-                                pdiff, gt, mask=eval_mask, reduction="mean"
-                            ).item()
-                        )
-                    if (
-                        "specular" in pred_decomposition
-                        and "specular" in gt_decomposition
-                    ):
-                        ps = pred_decomposition["specular"].detach()
-                        gs = gt_decomposition["specular"].detach()
-                        metrics["PSNR/specular"] = float(
-                            psnr_metric(ps, gs, reduction="mean").item()
-                        )
-                        metrics["SSIM/specular"] = float(
-                            ssim_metric(ps, gs, reduction="mean").item()
-                        )
-                        metrics["MSE/specular"] = float(
-                            mse_metric(ps, gs, reduction="mean").item()
-                        )
-                    # Reconstructed image metric if available
-                    if (
-                        "rgb_highlighted" in pred_decomposition
-                        and "rgb_highlighted" in gt_decomposition
-                    ):
-                        pr = pred_decomposition["rgb_highlighted"].detach()
-                        gr = gt_decomposition["rgb_highlighted"].detach()
-                        metrics["PSNR/recon"] = float(
-                            psnr_metric(pr, gr, reduction="mean").item()
-                        )
-                        metrics["SSIM/recon"] = float(
-                            ssim_metric(pr, gr, reduction="mean").item()
-                        )
-                        metrics["MSE/recon"] = float(
-                            mse_metric(pr, gr, reduction="mean").item()
-                        )
-                except Exception as _metrics_e:
-                    # Do not fail the step if metrics fail; continue logging losses
-                    pass
+                eval_metrics = engine_helpers.compute_eval_metrics(
+                    pred_decomposition,
+                    gt_decomposition,
+                    phase,
+                    pixel_supervision_mask,
+                )
+                metrics.update(eval_metrics)
 
                 # Update the metrics dataframe
                 self.metrics[phase] = pd.concat(
@@ -1058,12 +1006,9 @@ class Engine:
 
                 # Image logging to wandb - with aggressive cleanup after
                 if log_images_this_batch and self.wandb:
-                    # try:
-                    # Create a copy of sample for visualization (since we deleted it earlier)
                     gt_data = {
                         "rgb": gt_decomposition["rgb_highlighted"].cpu(),
                     }
-                    # Add optional polarization data if available
                     if "highlight" in gt_decomposition:
                         gt_data["highlight"] = gt_decomposition["highlight"].cpu()
                     if "rgb_highlighted" in gt_decomposition:
@@ -1071,166 +1016,17 @@ class Engine:
                             "rgb_highlighted"
                         ].cpu()
 
-                    # Remove tokens_teacher and tokens_completed as they are not needed for visualization
-                    if (
-                        "tokens_teacher" in gt_decomposition
-                        and "tokens_completed" in pred_decomposition
-                    ):
-                        # Dimensions
-                        _, npatches, embed_dim = gt_decomposition["tokens_teacher"][
-                            -1
-                        ].shape
-                        patch_resolution = int(math.sqrt(npatches))
-                        # PCA for consistent visualization
-                        _, pca = rgb(
-                            diffuse_teacher_tokens[-1]
-                            .reshape(-1, patch_resolution, patch_resolution, embed_dim)
-                            .permute(0, 3, 1, 2)[0]
-                            .detach(),
-                            as_tensor=True,
-                            return_pca=True,
-                        )
-                        gt_decomposition["token_inpaint"] = (
-                            rgb(
-                                diffuse_teacher_tokens[-1]
-                                .reshape(
-                                    -1, patch_resolution, patch_resolution, embed_dim
-                                )
-                                .permute(0, 3, 1, 2)
-                                .detach()[0],
-                                pca=pca,
-                                resize=(
-                                    self.config.MODEL.RGB_ENCODER.IMAGE_SIZE,
-                                    self.config.MODEL.RGB_ENCODER.IMAGE_SIZE,
-                                ),
-                                as_tensor=True,
-                                blackout=False,
-                            )
-                            * patch_mask_to_pixel_mask(
-                                patch_inpaint_mask, patch_size=16
-                            ).int()[0]
-                        )
-                        pred_decomposition["token_inpaint"] = (
-                            rgb(
-                                pred_decomposition["tokens_completed"][-1]
-                                .reshape(
-                                    -1, patch_resolution, patch_resolution, embed_dim
-                                )
-                                .permute(0, 3, 1, 2)
-                                .detach()[0],
-                                pca=pca,
-                                resize=(
-                                    self.config.MODEL.RGB_ENCODER.IMAGE_SIZE,
-                                    self.config.MODEL.RGB_ENCODER.IMAGE_SIZE,
-                                ),
-                                as_tensor=True,
-                                blackout=False,
-                            )
-                            * patch_mask_to_pixel_mask(
-                                patch_inpaint_mask, patch_size=16
-                            ).int()[0]
-                        )
-                        gt_decomposition["pixel_supervision_mask"] = rgb(
-                            pixel_supervision_mask.int(),
-                            resize=(
-                                self.config.MODEL.RGB_ENCODER.IMAGE_SIZE,
-                                self.config.MODEL.RGB_ENCODER.IMAGE_SIZE,
-                            ),
-                            as_tensor=True,
-                            colormap="gray",
-                        )
-                        pred_decomposition["pixel_supervision_mask"] = rgb(
-                            pixel_supervision_mask.int() * diffuse,
-                            resize=(
-                                self.config.MODEL.RGB_ENCODER.IMAGE_SIZE,
-                                self.config.MODEL.RGB_ENCODER.IMAGE_SIZE,
-                            ),
-                            as_tensor=True,
-                        )
-
-                        gt_decomposition["token_sup"] = (
-                            rgb(
-                                diffuse_teacher_tokens[-1]
-                                .reshape(
-                                    -1, patch_resolution, patch_resolution, embed_dim
-                                )
-                                .permute(0, 3, 1, 2)
-                                .detach()[0],
-                                pca=pca,
-                                resize=(
-                                    self.config.MODEL.RGB_ENCODER.IMAGE_SIZE,
-                                    self.config.MODEL.RGB_ENCODER.IMAGE_SIZE,
-                                ),
-                                as_tensor=True,
-                                blackout=False,
-                            )
-                            * patch_mask_to_pixel_mask(
-                                patch_supervision_mask, patch_size=16
-                            ).int()[0]
-                            * patch_mask_to_pixel_mask(
-                                patch_inpaint_mask, patch_size=16
-                            ).int()[0]
-                        )
-                        pred_decomposition["token_sup"] = (
-                            rgb(
-                                pred_decomposition["tokens_completed"][-1]
-                                .reshape(
-                                    -1, patch_resolution, patch_resolution, embed_dim
-                                )
-                                .permute(0, 3, 1, 2)
-                                .detach()[0],
-                                pca=pca,
-                                resize=(
-                                    self.config.MODEL.RGB_ENCODER.IMAGE_SIZE,
-                                    self.config.MODEL.RGB_ENCODER.IMAGE_SIZE,
-                                ),
-                                as_tensor=True,
-                                blackout=False,
-                            )
-                            * patch_mask_to_pixel_mask(
-                                patch_supervision_mask, patch_size=16
-                            ).int()[0]
-                            * patch_mask_to_pixel_mask(
-                                patch_inpaint_mask, patch_size=16
-                            ).int()[0]
-                        )
-
-
-                        ### REMOVING A BUNCH OF DEBUF STUFF FROM THE PLOTTING ROUTINES
-                        try:
-                            del gt_decomposition["masked_diffuse"]
-                        except Exception:
-                            pass
-                        try:
-                            del gt_decomposition["patch_mask_sup"]
-                        except Exception:
-                            pass
-                        try:
-                            del gt_decomposition["masked_tokens"]
-                        except Exception:
-                            pass
-                        try:
-                            del gt_decomposition["supervision_mask"]
-                        except Exception:
-                            pass
-                        try:
-                            del pred_decomposition["tokens_completed"]
-                        except Exception:
-                            pass
-                        try:
-                            del pred_decomposition["tokens_inpainted"]
-                        except Exception:
-                            pass
-                        try:
-                            del gt_decomposition["tokens_teacher"]
-                        except Exception:
-                            pass
-                        try:
-                            del gt_decomposition["specular"]
-                        except Exception:
-                            pass
-                    if "patch_mask" in pred_decomposition:
-                        del pred_decomposition["patch_mask"]
+                    image_size = self.config.MODEL.RGB_ENCODER.IMAGE_SIZE
+                    engine_viz.prepare_decomposition_dicts_for_logging(
+                        gt_decomposition,
+                        pred_decomposition,
+                        diffuse_teacher_tokens,
+                        patch_inpaint_mask,
+                        patch_supervision_mask,
+                        pixel_supervision_mask,
+                        diffuse,
+                        image_size,
+                    )
 
                     images = self.create_visualization_images(
                         gt_decomposition,
@@ -1246,7 +1042,10 @@ class Engine:
                         images_logged = True
 
                 # Console logging (rank 0 only when DDP)
-                if self._is_main_process() and batch_idx % self.config.get("LOG_INTERVAL", 10) == 0:
+                if (
+                    self._is_main_process()
+                    and batch_idx % self.config.get("LOG_INTERVAL", 10) == 0
+                ):
                     extra_info = (
                         "W" if is_training and step < self.warmup_steps else None
                     )
@@ -1259,7 +1058,11 @@ class Engine:
                     )
 
                 # WandB logging the batch metrics (rank 0 only when DDP)
-                if self._is_main_process() and self.wandb and batch_idx % self.logfreq_wandb == 0:
+                if (
+                    self._is_main_process()
+                    and self.wandb
+                    and batch_idx % self.logfreq_wandb == 0
+                ):
                     # Use the self._prepare_metrics_for_wandb function to format metrics properly
                     wandb_metrics = self._prepare_metrics_for_wandb(metrics, phase)
                     # Add the batch number
@@ -1298,6 +1101,25 @@ class Engine:
                 if batch_idx % self.memory_cleanup_frequency == 0:
                     torch.cuda.empty_cache()
                     gc.collect()
+
+                # Emergency save checkpoint if time left in job is less than 2 minutes
+                if self._is_main_process() :
+                    time_left = get_slurm_time_left_minutes()
+                    if (time_left is not None) and (time_left < 2):
+                        save_filename = f"emergency_chkpt_E{self.step['epoch'] + 1}B{batch_idx}.pt"
+                        emergency_cehckpoint_exists = glob.glob(os.path.join(self.earlystopping.checkpointpath, "emergency_chkpt*"))
+                        if not emergency_cehckpoint_exists:
+                            self.logger.info(
+                                f"Less than 2 minutes left in job execution time. Emergency saving checkpoint at {save_filename}",
+                                context="SAVE",
+                            )
+                            self.earlystopping.save_checkpoint(
+                                val_loss=0.0,
+                                model=self.model,
+                                epoch=self.step["epoch"],
+                                config=self.config,
+                                filename_override=save_filename,
+                            )
 
         # Compute average loss for epoch
         avg_loss = sum(epoch_losses) / len(epoch_losses) if epoch_losses else 0.0
@@ -1361,7 +1183,7 @@ class Engine:
 
         return avg_loss
 
-    def _save_checkpoint(self, epoch, is_best=False):
+    def save_checkpoint(self, epoch, is_best=False):
         """Save model checkpoint with enhanced state information. Only rank 0 when DDP."""
         if not self._is_main_process():
             return
@@ -1454,6 +1276,7 @@ class Engine:
         Returns:
             dict: Dictionary of wandb.Image objects for visualization
         """
+
         def add_image_fn(viz_dict, key, tensor, caption, bi, ph, ti):
             self._add_image_safely(viz_dict, key, tensor, caption, bi, ph, ti)
 
@@ -1752,7 +1575,9 @@ class Engine:
         if "wandb_run_id" in checkpoint_data and checkpoint_data["wandb_run_id"]:
             target_run_id = checkpoint_data["wandb_run_id"]
             current_run_id = (
-                getattr(self.wandb, "id", None) if getattr(self, "wandb", None) else None
+                getattr(self.wandb, "id", None)
+                if getattr(self, "wandb", None)
+                else None
             )
 
             # Only reinitialize WandB if we are not already attached to the correct run.
@@ -1831,9 +1656,7 @@ class Engine:
 
     def _log_memory_usage(self, context: str = ""):
         """Log current GPU memory usage for monitoring."""
-        engine_memory.log_memory_usage(
-            self.logger, context, self.memory_monitoring
-        )
+        engine_memory.log_memory_usage(self.logger, context, self.memory_monitoring)
 
     def _aggressive_memory_cleanup(self, exclude_vars: list = None):
         """Perform aggressive memory cleanup using the gpuClean utility."""

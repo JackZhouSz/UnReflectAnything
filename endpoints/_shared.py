@@ -17,6 +17,7 @@ DEFAULT_WEIGHTS_REPO = "AlbeRota/UnReflectAnything"
 
 # Default checkpoint filename under the cache dir (must match what the HF repo provides)
 DEFAULT_WEIGHTS_FILENAME = "full_model_weights.pt"
+DEFAULT_CONFIG_FILENAME = "pretrained_config.yaml"
 
 # Subfolder names in the HuggingFace repo (must match mgmt/upload_hf.py)
 WEIGHTS_SUBFOLDER = "weights"

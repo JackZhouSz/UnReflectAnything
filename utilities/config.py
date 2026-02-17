@@ -28,7 +28,7 @@ def resolve_distribute(config: DotMap) -> None:
     Mutates config so that config.get("DISTRIBUTE", "single") is always one of
     "single", "dp", "ddp".
     """
-    distribute_entry = config.get("DISTRIBUTE", "single")
+    distribute_entry = config.get("DISTRIBUTE", "singlegpu")
     if distribute_entry == "single" and torch.cuda.device_count() > 1:
         logger.warning(
             f"DISTRIBUTE is 'singlegpu' even though multiple GPUs are available"
@@ -95,7 +95,7 @@ def create_model_from_config(
     # Dynamically import the models module
     models_module = importlib.import_module(model_module_name)
 
-    # Get image dimensions from config (first dataset with TARGET_SIZE)
+    # Get image dimensions from config (first dataset with TARGET_SIZE)v
     target_size = None
     datasets_cfg = config.get("DATASETS", {})
     if isinstance(datasets_cfg, dict):
@@ -132,23 +132,6 @@ def create_model_from_config(
         "encoder_lr": rgb_encoder_config.get("RGB_ENCODER_LR", None),
     }
 
-    # POL Encoder configuration
-    # pol_encoder_config = model_config.get("POL_ENCODER", {})
-    # pol_enc_cfg = {
-    #     "in_ch": 3,
-    #     "embed_dim": pol_encoder_config.get("EMBED_DIM", 384),
-    #     "depth": pol_encoder_config.get("DEPTH", 4),
-    #     "n_heads": pol_encoder_config.get("N_HEADS", 12),
-    #     "patch_size": pol_encoder_config.get("PATCH_SIZE", 16),
-    # }
-    # # Cross-attention configuration
-    # cross_attn_config = model_config.get("CROSS_ATTN", {})
-    # cross_attn_cfg = {
-    #     "embed_dim": cross_attn_config.get("EMBED_DIM", 384),
-    #     "n_heads": cross_attn_config.get("N_HEADS", 12),
-    #     "dropout": cross_attn_config.get("DROPOUT", 0.1),
-    #     "bi_directional": cross_attn_config.get("BI_DIRECTIONAL", False),
-    # }
 
     # Decoder configuration - support both flexible and legacy formats
     decoders_config = model_config.get("DECODERS", None)
@@ -181,7 +164,6 @@ def create_model_from_config(
                 "decoder_lr": decoder_params.get("DECODER_LR", None),
             }
             decoders[decoder_name] = decoder_cfg
-
         decoder_kwargs = {"decoders": decoders}
     else:
         # Legacy decoder format - single DECODER config applied to all three decoders
@@ -214,13 +196,13 @@ def create_model_from_config(
     else:
         shared_dinov3 = models_module.DINOv3(dinov3_cfg).to(device)
     # Create the main model
-    model_class_str = model_config.get("MODEL_CLASS", "UnReflect_Model")
+    model_class_str = model_config.get("MODEL_CLASS", "UnReflect_Model_TokenInpainter")
     # Get the model class from the string name
     model_class = getattr(models_module, model_class_str)
-
     # Build model kwargs based on model type
     model_kwargs = {
         "dinov3": shared_dinov3,
+        "verbose": verbose,
         **decoder_kwargs,
     }
 
@@ -264,7 +246,7 @@ def create_model_from_config(
     model = model_class(**model_kwargs).to(device)
     # torch.compile is incompatible with nn.DataParallel; skip when using DataParallel
     dp_or_ddp = distribute in (DISTRIBUTE_DP, DISTRIBUTE_DDP)
-    should_compile = config.get("USE_TORCH_COMPILE", True) and not dp_or_ddp
+    should_compile = config.get("USE_TORCH_COMPILE", False) and not dp_or_ddp
     if should_compile:
         start_time = time.time()
         model = torch.compile(

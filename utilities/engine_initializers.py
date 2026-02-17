@@ -560,8 +560,8 @@ def wandb(config, model=None, notes="", no_wandb=False, resume_wandb_run_id=None
         logger.info(
             f"Created run [yellow]{wandb_instance.name}[/] in project [orange1]{wandb_instance.project}[/]"
         )
-        logger.info("[yellow]󰙨 Wandb RUN    [/]:", wandb_links[2])
-        logger.info("[orange1]󱗼 Wandb PROJECT[/]:", wandb_links[1])
+        logger.info("[yellow]󰙨 Wandb RUN    [/]:", wandb_links[3])
+        logger.info("[orange1]󱗼 Wandb PROJECT[/]:", wandb_links[2])
     except Exception:
         pass
 

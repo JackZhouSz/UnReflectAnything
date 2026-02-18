@@ -41,14 +41,14 @@ def cite(format: Literal["bibtex", "apa", "mla", "ieee", "plain"] = "bibtex") ->
     try:
         try:
             pkg = importlib.resources.files("unreflectanything")
-            citations_path = pkg / "data" / "citations.txt"
+            citations_path = pkg / "assets" / "citations.txt"
             if hasattr(citations_path, "read_text"):
                 citations_text = citations_path.read_text(encoding="utf-8")
             else:
-                citations_path = Path(__file__).parent / "data" / "citations.txt"
+                citations_path = Path(__file__).parent / "assets" / "citations.txt"
                 citations_text = citations_path.read_text(encoding="utf-8")
         except Exception:
-            citations_path = Path(__file__).parent / "data" / "citations.txt"
+            citations_path = Path(__file__).parent / "assets" / "citations.txt"
             if citations_path.exists():
                 citations_text = citations_path.read_text(encoding="utf-8")
             else:

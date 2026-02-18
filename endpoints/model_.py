@@ -129,14 +129,15 @@ class UnReflectModel(_nn_module_base()):
         import torch
         from ._shared import _resolve_device
         from utilities.config import create_model_from_config
-
+        import importlib
         # ── 1. Resolve target device ──────────────────────────────────
         torch_device = torch.device(_resolve_device(device))
 
         # ── 2. Resolve & load model configuration ─────────────────────
         #    `config` (object) takes priority over `config_path` (file).
         if config is None and config_path is None:
-            config_path = Path(__file__).parent / "pretrained_config.yaml"
+            pkg = importlib.resources.files("unreflectanything")
+            config_path = pkg / "assets" / "pretrained_config.yaml"
         model_config = self._resolve_config(config, config_path, verbose)
         # ── 3. Build model architecture from config ───────────────────
         inner = create_model_from_config(model_config, torch_device, verbose=verbose)

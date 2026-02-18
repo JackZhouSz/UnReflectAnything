@@ -361,7 +361,7 @@ def _run_completion(args: argparse.Namespace) -> None:
         pkg = importlib.resources.files("unreflectanything")
     shell = (args.shell or "").strip().lower()
     if "zsh" in shell:
-        path = pkg / "data" / "unreflect-completion.zsh"
+        path = pkg / "assets" / "unreflect-completion.zsh"
         print(
             """\nRun the following command to load the completion script
 
@@ -373,7 +373,7 @@ def _run_completion(args: argparse.Namespace) -> None:
             end="",
         )
     else:
-        path = pkg / "data" / "unreflect-completion.bash"
+        path = pkg / "assets" / "unreflect-completion.bash"
         print(
             """\nRun the following command to load the completion script
 

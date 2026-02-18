@@ -126,10 +126,10 @@ py-modules = [
   "requirements.txt",
 ]
 "unreflectanything" = [
-  "pretrained_config.yaml",
-  "data/*.bash",
-  "data/*.zsh",
-  "data/*.txt",
+  "assets/pretrained_config.yaml",
+  "assets/*.bash",
+  "assets/*.zsh",
+  "assets/*.txt",
 ]
 
 [tool.pyright]

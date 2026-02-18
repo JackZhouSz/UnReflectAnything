@@ -135,6 +135,8 @@ class UnReflectModel(_nn_module_base()):
 
         # ── 2. Resolve & load model configuration ─────────────────────
         #    `config` (object) takes priority over `config_path` (file).
+        if config is None and config_path is None:
+            config_path = Path(__file__).parent / "pretrained_config.yaml"
         model_config = self._resolve_config(config, config_path, verbose)
         # ── 3. Build model architecture from config ───────────────────
         inner = create_model_from_config(model_config, torch_device, verbose=verbose)
@@ -300,7 +302,7 @@ class UnReflectModel(_nn_module_base()):
         self,
         images: "Tensor",
         threshold: float = 0.3,
-        dilation = None,
+        dilation = 40,
         inpaint_mask_override: Optional["Tensor"] = None,
         return_dict: bool = False,
     ) -> Union["Tensor", Dict[str, "Tensor"]]:

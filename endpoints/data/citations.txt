@@ -1,5 +1,5 @@
 [bibtex]
-@misc{rota2025unreflectanythingrgbonlyhighlightremoval,
+@misc{rota2025unreflectanything,
       title={UnReflectAnything: RGB-Only Highlight Removal by Rendering Synthetic Specular Supervision}, 
       author={Alberto Rota and Mert Kiray and Mert Asim Karaoglu and Patrick Ruhkamp and Elena De Momi and Nassir Navab and Benjamin Busam},
       year={2025},

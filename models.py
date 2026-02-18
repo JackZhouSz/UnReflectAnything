@@ -1471,6 +1471,7 @@ class UnReflect_Model_TokenInpainter(UnReflect_Model):
         # Store tokens_completed WITH gradients for token loss computation
         outputs["tokens_completed"] = completed_tokens
         outputs["tokens_inpainted"] = T_inpainted
+        outputs["tokens_input"] = tokens_list
 
         # 4) Decode with DETACHED completed tokens to prevent decoder loss from affecting TokenInpainter
         for name, dec in self.decoders.items():

@@ -1,4 +1,9 @@
-"""Inference API for UnReflectAnything."""
+"""Inference API for UnReflectAnything.
+
+Thin wrapper around model loading + forward pass, usable both from the
+Python API (``unreflectanything.inference(...)``) and from the CLI
+(``unreflectanything inference ...``).
+"""
 
 from __future__ import annotations
 
@@ -20,6 +25,54 @@ def _config_to_path_or_none(
     return p if p.exists() else None
 
 
+def _ensure_model(
+    model: Optional[Any],
+    weights_path: Optional[Union[str, PathLike, Path]],
+    config: Optional[Union[str, PathLike, Path, dict]],
+    device: str,
+    verbose: bool,
+) -> Any:
+    """Return a ready-to-use ``UnReflectModel`` (creates one when *model* is ``None``)."""
+    if model is not None:
+        return model
+
+    from ._shared import DEFAULT_WEIGHTS_FILENAME, get_cache_dir, _resolve_device
+    from .model_ import model as model_factory
+
+    resolved_weights = (
+        get_cache_dir("weights") / DEFAULT_WEIGHTS_FILENAME
+        if weights_path is None
+        else Path(weights_path).expanduser().resolve()
+    )
+    if not resolved_weights.exists():
+        raise FileNotFoundError(
+            f"Weights not found at {resolved_weights}. "
+            "Run 'unreflect download --weights' first."
+        )
+    return model_factory(
+        pretrained=True,
+        weights_path=resolved_weights,
+        config_path=_config_to_path_or_none(config),
+        device=torch.device(_resolve_device(device)),
+        verbose=verbose,
+    )
+
+
+def _model_device(model: Any, fallback: str = "cuda") -> torch.device:
+    """Resolve the torch device the model lives on."""
+    from ._shared import _resolve_device
+
+    dev = getattr(model, "device", None)
+    if dev is None:
+        return torch.device(_resolve_device(fallback))
+    return torch.device(dev) if isinstance(dev, str) else dev
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+
 def inference(
     input: Union[str, PathLike, Path, torch.Tensor],
     output: Optional[Union[str, PathLike, Path]] = None,
@@ -27,42 +80,41 @@ def inference(
     config: Optional[Union[str, PathLike, Path, dict]] = None,
     device: str = "cuda",
     batch_size: int = 4,
-    brightness_threshold: float = 0.8,
+    threshold: float = 0.3,
+    dilation: int = 40,
     resize_output: bool = True,
     verbose: bool = False,
     model: Optional[Any] = None,
 ) -> Optional[torch.Tensor]:
     """Run inference on input image(s) to remove specular reflections.
 
-    This function runs the UnReflectAnything model on input images to produce
-    diffuse (reflection-free) outputs. It supports both file-based and tensor-based
-    workflows.
+    Wraps model loading and forward pass.  Works with tensors (API) or
+    file / directory paths (CLI / scripting).
 
     Args:
-        input: Input source. Can be:
-            - Path to a single image file
-            - Path to a directory containing images
-            - Tensor of shape [B, 3, H, W] (batch of RGB images, values in [0, 1])
-        output: Output destination. If provided, results are saved to disk.
-            If None, returns the result as a tensor.
-        weights_path: Path to model weights. Ignored when `model` is provided.
-            Defaults to the cache directory when model is None.
-        config: Configuration source (YAML path or dict). Ignored when `model` is provided.
-        device: Device to run inference on (e.g. 'cuda', 'cpu'). Ignored when `model` is provided.
-        batch_size: Number of images to process per forward pass (default: 4).
-        brightness_threshold: Threshold for highlight mask computation (0.0-1.0).
-        resize_output: If True, resize output images to match original input dimensions.
-        verbose: If True, print progress information.
-        model: Optional pre-built model instance (e.g. from ``ura.model(pretrained=True)``).
-            If provided, no model is created internally and weights_path/config/device are ignored.
+        input: Path to an image file or directory, **or** a ``[B, 3, H, W]``
+            float tensor with values in ``[0, 1]``.
+        output: When given, results are saved to this path and ``None`` is
+            returned.  When ``None``, results are returned as a tensor.
+        weights_path: Checkpoint path.  Ignored when *model* is provided.
+        config: Architecture config (YAML path or dict).  Ignored when
+            *model* is provided.
+        device: Target device string.  Ignored when *model* is provided.
+        batch_size: Images per forward pass when processing directories.
+        threshold: Highlight-mask threshold passed to the model (default 0.3).
+        dilation: Highlight-mask dilation in pixels passed to the model
+            (default 40).
+        resize_output: Resize saved images back to original dimensions.
+        verbose: Print progress information.
+        model: Pre-built ``UnReflectModel`` instance.  When provided the
+            function skips model creation (weights_path / config / device
+            are ignored).
 
     Returns:
-        If output is None: Tensor of shape [B, 3, H, W] with diffuse predictions.
-        If output is provided: None (results saved to disk).
+        ``[B, 3, H, W]`` diffuse tensor when *output* is ``None``, else
+        ``None`` (results written to disk).
     """
     from torch import Tensor
-
-    from ._shared import _resolve_device
 
     is_tensor_input = isinstance(input, Tensor)
 
@@ -73,7 +125,8 @@ def inference(
             weights_path=weights_path,
             config=config,
             device=device,
-            brightness_threshold=brightness_threshold,
+            threshold=threshold,
+            dilation=dilation,
             verbose=verbose,
         )
 
@@ -85,16 +138,16 @@ def inference(
         import tempfile
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            output_path = Path(tmpdir)
             return _inference_files_return_tensors(
                 input_path=input_path,
-                output_path=output_path,
+                output_path=Path(tmpdir),
                 model=model,
                 weights_path=weights_path,
                 config=config,
                 device=device,
                 batch_size=batch_size,
-                brightness_threshold=brightness_threshold,
+                threshold=threshold,
+                dilation=dilation,
                 resize_output=resize_output,
                 verbose=verbose,
             )
@@ -108,18 +161,21 @@ def inference(
             input_path=input_path,
             output_path=output_path,
             batch_size=batch_size,
-            brightness_threshold=brightness_threshold,
+            threshold=threshold,
+            dilation=dilation,
             resize_output=resize_output,
             verbose=verbose,
         )
         return None
 
+    # Legacy path: delegate to the standalone inference runner
     from inference import InferenceOptions, run_inference as _run_inference_files
 
     from ._shared import (
         DEFAULT_WEIGHTS_FILENAME,
         get_cache_dir,
         _apply_config_to_options,
+        _resolve_device,
     )
 
     resolved_weights = (
@@ -139,7 +195,8 @@ def inference(
         output_dir=output_path if output_path.is_dir() else output_path.parent,
         device=_resolve_device(device),
         batch_size=batch_size,
-        brightness_threshold=brightness_threshold,
+        brightness_threshold=threshold,
+        inpaint_mask_dilation=dilation,
         resize_output=resize_output,
         monitor_usage=False,
     )
@@ -149,18 +206,22 @@ def inference(
     return None
 
 
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+
 def _inference_tensor(
     input_tensor: torch.Tensor,
     model: Optional[Any] = None,
     weights_path: Optional[Union[str, Path]] = None,
     config: Optional[Union[str, Path, dict]] = None,
     device: str = "cuda",
-    brightness_threshold: float = 0.8,
+    threshold: float = 0.3,
+    dilation: int = 40,
     verbose: bool = False,
 ) -> torch.Tensor:
-    """Run inference on a tensor input, returning a tensor output."""
-    from ._shared import _resolve_device
-
+    """Run inference on a ``[B, 3, H, W]`` tensor, return ``[B, 3, H, W]`` diffuse."""
     if input_tensor.dim() != 4:
         raise ValueError(
             f"Input tensor must be 4D [B,C,H,W], got {input_tensor.dim()}D"
@@ -170,53 +231,18 @@ def _inference_tensor(
             f"Input tensor must have 3 channels, got {input_tensor.shape[1]}"
         )
 
-    if model is None:
-        from ._shared import DEFAULT_WEIGHTS_FILENAME, get_cache_dir
-        from .model_ import model as model_factory
+    mdl = _ensure_model(model, weights_path, config, device, verbose)
+    torch_device = _model_device(mdl, device)
+    input_tensor = input_tensor.to(device=torch_device, dtype=torch.float32)  # [B,3,H,W]
 
-        resolved_weights = (
-            get_cache_dir("weights") / DEFAULT_WEIGHTS_FILENAME
-            if weights_path is None
-            else Path(weights_path).expanduser().resolve()
-        )
-        if not resolved_weights.exists():
-            raise FileNotFoundError(
-                f"Weights not found at {resolved_weights}. "
-                "Run 'unreflect download --weights' first."
-            )
-        config_path = _config_to_path_or_none(config)
-        torch_device = torch.device(_resolve_device(device))
-        model = model_factory(
-            pretrained=True,
-            weights_path=resolved_weights,
-            config_path=config_path,
-            device=torch_device,
-            verbose=verbose,
-        )
-    else:
-        torch_device = getattr(model, "device", None)
-        if torch_device is None:
-            torch_device = torch.device(_resolve_device(device))
-        elif isinstance(torch_device, str):
-            torch_device = torch.device(torch_device)
-
-    input_tensor = input_tensor.to(device=torch_device, dtype=torch.float32)
-    # [B, 1, H, W] highlight mask from brightness
-    inpaint_mask = (input_tensor.mean(1, keepdim=True) > brightness_threshold).to(
-        torch_device, dtype=torch.float32
-    )
-
-    model.eval()
+    mdl.eval()
     with torch.no_grad():
-        outputs = model(
+        diffuse = mdl(
             images=input_tensor,
-            inpaint_mask_override=inpaint_mask,
-            return_dict=True,
-        )
-    diffuse = outputs.get("diffuse")
-    if diffuse is None:
-        raise KeyError("Model output does not contain 'diffuse'")
-    return diffuse.clamp(0.0, 1.0)
+            threshold=threshold,
+            dilation=dilation,
+        )  # [B, 3, H, W]
+    return diffuse
 
 
 def _inference_files_return_tensors(
@@ -227,64 +253,35 @@ def _inference_files_return_tensors(
     config: Optional[Union[str, Path, dict]] = None,
     device: str = "cuda",
     batch_size: int = 4,
-    brightness_threshold: float = 0.8,
+    threshold: float = 0.3,
+    dilation: int = 40,
     resize_output: bool = True,
     verbose: bool = False,
 ) -> torch.Tensor:
-    """Run file-based inference but return results as tensors instead of saving."""
+    """Load images from disk, run model forward, return stacked tensor."""
     from PIL import Image
     from torchvision.transforms import functional as TF
 
     from utilities.inference import list_image_paths
 
-    from ._shared import (
-        DEFAULT_IMAGE_EXTENSIONS,
-        DEFAULT_WEIGHTS_FILENAME,
-        get_cache_dir,
-        _resolve_device,
-    )
+    from ._shared import DEFAULT_IMAGE_EXTENSIONS
 
-    if model is None:
-        from .model_ import model as model_factory
+    mdl = _ensure_model(model, weights_path, config, device, verbose)
+    torch_device = _model_device(mdl, device)
 
-        resolved_weights = (
-            get_cache_dir("weights") / DEFAULT_WEIGHTS_FILENAME
-            if weights_path is None
-            else Path(weights_path).expanduser().resolve()
-        )
-        if not resolved_weights.exists():
-            raise FileNotFoundError(
-                f"Weights not found at {resolved_weights}. "
-                "Run 'unreflect download --weights' first."
-            )
-        config_path = _config_to_path_or_none(config)
-        torch_device = torch.device(_resolve_device(device))
-        model = model_factory(
-            pretrained=True,
-            weights_path=resolved_weights,
-            config_path=config_path,
-            device=torch_device,
-            verbose=verbose,
-        )
-
-    torch_device = getattr(model, "device", None)
-    if torch_device is None:
-        torch_device = torch.device(_resolve_device(device))
-    elif isinstance(torch_device, str):
-        torch_device = torch.device(torch_device)
-
-    target_side = getattr(model, "image_size", None) or getattr(
-        model._model.dinov3.config, "image_size", 448
+    target_side = getattr(mdl, "image_size", None) or getattr(
+        mdl._model.dinov3.config, "image_size", 448
     )
     target_size = (target_side, target_side)
 
-    if input_path.is_file():
-        image_paths = [input_path]
-    else:
-        image_paths = list_image_paths(input_path, DEFAULT_IMAGE_EXTENSIONS)
+    image_paths = (
+        [input_path]
+        if input_path.is_file()
+        else list_image_paths(input_path, DEFAULT_IMAGE_EXTENSIONS)
+    )
 
     results = []
-    model.eval()
+    mdl.eval()
 
     for i in range(0, len(image_paths), batch_size):
         batch_paths = image_paths[i : i + batch_size]
@@ -297,24 +294,18 @@ def _inference_files_return_tensors(
                 batch_tensors.append(resized)
 
         rgb_batch = torch.stack(batch_tensors, dim=0).to(
-            device=torch_device, dtype=torch.float32
-        )
-        inpaint_mask = (
-            rgb_batch.mean(1, keepdim=True) > brightness_threshold
-        ).to(device=torch_device, dtype=torch.float32)
+            device=torch_device, dtype=torch.float32,
+        )  # [B, 3, H, W]
 
         with torch.no_grad():
-            outputs = model(
+            diffuse = mdl(
                 images=rgb_batch,
-                inpaint_mask_override=inpaint_mask,
-                return_dict=True,
-            )
-        diffuse = outputs.get("diffuse")
-        if diffuse is None:
-            raise KeyError("Model output does not contain 'diffuse'")
-        results.append(diffuse.clamp(0.0, 1.0).cpu())
+                threshold=threshold,
+                dilation=dilation,
+            )  # [B, 3, H, W]
+        results.append(diffuse.cpu())
 
-    return torch.cat(results, dim=0)
+    return torch.cat(results, dim=0)  # [N, 3, H, W]
 
 
 def _inference_files_save(
@@ -322,23 +313,20 @@ def _inference_files_save(
     input_path: Path,
     output_path: Path,
     batch_size: int = 4,
-    brightness_threshold: float = 0.8,
+    threshold: float = 0.3,
+    dilation: int = 40,
     resize_output: bool = True,
     verbose: bool = False,
 ) -> None:
-    """Run file-based inference with a provided model and save results to disk."""
+    """Run model forward on image files and save results to disk."""
     from PIL import Image
     from torchvision.transforms import functional as TF
 
     from utilities.inference import list_image_paths, save_diffuse_batch
 
-    from ._shared import DEFAULT_IMAGE_EXTENSIONS, _resolve_device
+    from ._shared import DEFAULT_IMAGE_EXTENSIONS
 
-    torch_device = getattr(model, "device", None)
-    if torch_device is None:
-        torch_device = torch.device(_resolve_device("cuda"))
-    elif isinstance(torch_device, str):
-        torch_device = torch.device(torch_device)
+    torch_device = _model_device(model)
 
     target_side = getattr(model, "image_size", None) or getattr(
         model._model.dinov3.config, "image_size", 448
@@ -368,30 +356,29 @@ def _inference_files_save(
                 batch_tensors.append(resized)
 
         rgb_batch = torch.stack(batch_tensors, dim=0).to(
-            device=torch_device, dtype=torch.float32
-        )
-        inpaint_mask = (
-            rgb_batch.mean(1, keepdim=True) > brightness_threshold
-        ).to(device=torch_device, dtype=torch.float32)
+            device=torch_device, dtype=torch.float32,
+        )  # [B, 3, H, W]
 
         with torch.no_grad():
-            outputs = model(
+            diffuse = model(
                 images=rgb_batch,
-                inpaint_mask_override=inpaint_mask,
-                return_dict=True,
-            )
-        diffuse = outputs.get("diffuse")
-        if diffuse is None:
-            raise KeyError("Model output does not contain 'diffuse'")
+                threshold=threshold,
+                dilation=dilation,
+            )  # [B, 3, H, W]
 
         save_diffuse_batch(
-            diffuse.clamp(0.0, 1.0),
+            diffuse,
             batch_paths,
             input_dir,
             output_dir,
             original_sizes=original_sizes if resize_output else None,
             resize_output=resize_output,
         )
+
+
+# ---------------------------------------------------------------------------
+# Legacy CLI entry-point (YAML config → InferenceOptions)
+# ---------------------------------------------------------------------------
 
 
 def parse_cli():
@@ -427,7 +414,6 @@ def parse_cli():
 
     raw_weights = raw_options.get("weights_path")
     weights_path = _as_path(raw_weights)
-    # Default to cache dir (same as download-weights) when omitted or set to "default"
     if weights_path is None or (
         isinstance(raw_weights, str) and str(raw_weights).strip().lower() == "default"
     ):
@@ -491,9 +477,22 @@ def parse_cli():
     if not isinstance(resize_output, bool):
         raise ValueError("resize_output must be a boolean")
 
-    brightness_threshold = float(raw_options.get("brightness_threshold", 0.7))
+    # Accept both new names (threshold / dilation) and legacy names
+    brightness_threshold = float(
+        raw_options.get(
+            "threshold",
+            raw_options.get("brightness_threshold", 0.3),
+        )
+    )
     if not (0.0 <= brightness_threshold <= 1.0):
-        raise ValueError("brightness_threshold must be between 0.0 and 1.0")
+        raise ValueError("threshold must be between 0.0 and 1.0")
+
+    inpaint_mask_dilation = int(
+        raw_options.get(
+            "dilation",
+            raw_options.get("inpaint_mask_dilation", 40),
+        )
+    )
 
     monitor_usage = raw_options.get("monitor_usage", False)
     if not isinstance(monitor_usage, bool):
@@ -507,7 +506,7 @@ def parse_cli():
         weights_path=weights_path,
         input_dir=input_dir,
         output_dir=output_dir,
-        inpaint_mask_dilation=int(raw_options.get("inpaint_mask_dilation", 11)),
+        inpaint_mask_dilation=inpaint_mask_dilation,
         run=raw_options.get("run"),
         runs_dir=_as_path(raw_options.get("runs_dir")),
         model_config_path=_as_path(raw_options.get("model_config_path")),

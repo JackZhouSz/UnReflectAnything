@@ -29,34 +29,7 @@ CONFIGS_SUBFOLDER = "configs"
 DEFAULT_IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff", ".webp")
 
 
-def get_cache_dir(subdir: Optional[str] = "") -> Path:
-    """Return the default base directory for caching downloaded assets (cross-platform).
-
-    This is the parent directory for weights, images, and notebooks.
-
-    - **Linux / macOS**: Uses ``$XDG_CACHE_HOME`` if set (XDG Base Dir spec), otherwise
-      ``~/.cache``. Result: ``$XDG_CACHE_HOME/unreflectanything`` or
-      ``~/.cache/unreflectanything``.
-    - **Windows**: Uses ``%LOCALAPPDATA%`` if set (e.g. ``C:\\Users\\...\\AppData\\Local``),
-      otherwise ``~/.cache`` (``~`` expands to the user profile). Result:
-      ``%LOCALAPPDATA%\\unreflectanything`` or ``~/.cache/unreflectanything``.
-
-    Returns:
-        Path to the base cache directory.
-    """
-    if os.name == "nt":
-        base = os.environ.get("LOCALAPPDATA", os.path.expanduser("~/.cache"))
-    else:
-        base = os.environ.get("XDG_CACHE_HOME", os.path.expanduser("~/.cache"))
-    if subdir not in ["weights", "images", "notebooks", "configs",""]:
-        import warnings
-
-        warnings.warn(
-            f"Unknown asset subdir '{subdir}', returning parent cache dir. "
-            "Valid options: 'weights', 'images', 'notebooks', 'configs'."
-        )
-        subdir = ""
-    return Path(base).expanduser().resolve() / "unreflectanything" / subdir
+from .cache_ import get_cache_dir  # noqa: F811 — canonical impl lives in cache_.py
 
 
 def _ensure_huggingface_hub():

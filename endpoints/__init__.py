@@ -9,6 +9,8 @@ Public API (recommended):
     verify: Verify dataset structure or weights integrity.
     verify_dataset: Verify dataset structure (alias for verify(what="dataset", ...)).
     cite: Get citation in various formats.
+    cache_dir: Return the cache directory for downloaded assets.
+    cache_clear: Delete cached assets (all or a specific subdir).
 
 Legacy API (still supported):
     run_pipeline: Train or test the network (main entry for training/testing).
@@ -20,9 +22,11 @@ Legacy API (still supported):
     DEFAULT_IMAGE_EXTENSIONS: Default image file extensions for ImageDirDataset.
 
 Example:
-    >>> from unreflectanything import inference, evaluate
+    >>> from unreflectanything import inference, evaluate, cache_dir
     >>> inference("input.png", output="output.png")
     >>> results = evaluate("output.png", "reference.png")
+    >>> cache_dir("weights")
+    PosixPath('/home/user/.cache/unreflectanything/weights')
 """
 
 from __future__ import annotations
@@ -38,6 +42,8 @@ __all__ = [
     "evaluate",
     "verify_dataset",
     "cite",
+    "cache_dir",
+    "cache_clear",
     # Legacy API (still supported)
     "run_pipeline",
     "run_inference",
@@ -92,6 +98,14 @@ def __getattr__(name: str):
         from .cite_ import cite
 
         return cite
+    if name == "cache_dir":
+        from .cache_ import cache_dir
+
+        return cache_dir
+    if name == "cache_clear":
+        from .cache_ import cache_clear
+
+        return cache_clear
 
     # Legacy API
     if name == "run_pipeline":

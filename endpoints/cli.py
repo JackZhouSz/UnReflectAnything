@@ -78,7 +78,6 @@ def _run_inference(args: argparse.Namespace) -> None:
     """Run inference - calls inference_.inference()."""
     from .inference_ import inference
 
-    # Determine output paths
     output = args.output
     if output is None:
         output = Path("./output")
@@ -90,7 +89,8 @@ def _run_inference(args: argparse.Namespace) -> None:
         config=args.config if args.config else None,
         device=args.device,
         batch_size=args.batch_size,
-        brightness_threshold=args.brightness_threshold,
+        threshold=args.threshold,
+        dilation=args.dilation,
         resize_output=not args.no_resize,
         verbose=args.verbose,
     )
@@ -215,19 +215,36 @@ def _run_download_weights(args: argparse.Namespace) -> None:
 
 def _run_cache_dir(args: argparse.Namespace) -> None:
     """Print the cache directory (base or a specific asset subdir)."""
-    from ._shared import get_cache_dir
+    from .cache_ import cache_dir
 
     if args.weights:
-        path = get_cache_dir("weights")
+        path = cache_dir("weights")
     elif args.images:
-        path = get_cache_dir("images")
+        path = cache_dir("images")
     elif args.notebooks:
-        path = get_cache_dir("notebooks")
+        path = cache_dir("notebooks")
     elif args.configs:
-        path = get_cache_dir("configs")
+        path = cache_dir("configs")
     else:
-        path = get_cache_dir()
-    print(path.resolve())
+        path = cache_dir()
+    print(path)
+
+
+def _run_cache_clear(args: argparse.Namespace) -> None:
+    """Delete the cache directory (base or a specific asset subdir)."""
+    from .cache_ import cache_clear
+
+    if args.weights:
+        removed = cache_clear("weights")
+    elif args.images:
+        removed = cache_clear("images")
+    elif args.notebooks:
+        removed = cache_clear("notebooks")
+    elif args.configs:
+        removed = cache_clear("configs")
+    else:
+        removed = cache_clear()
+    print(f"Cleared {removed}")
 
 
 def _run_verify(args: argparse.Namespace) -> None:
@@ -438,10 +455,17 @@ def main() -> None:
         help="Batch size for inference (default: 4)",
     )
     p_inf.add_argument(
-        "--brightness-threshold",
+        "-t",
+        "--threshold",
         type=float,
-        default=0.8,
-        help="Brightness threshold for highlight detection (default: 0.8)",
+        default=0.3,
+        help="Highlight mask threshold (default: 0.3)",
+    )
+    p_inf.add_argument(
+        "--dilation",
+        type=int,
+        default=40,
+        help="Highlight mask dilation in pixels (default: 40)",
     )
     p_inf.add_argument(
         "--no-resize",
@@ -583,34 +607,80 @@ def main() -> None:
     p_dl_weights.set_defaults(func=_run_download_weights)
 
     # -------------------------------------------------------------------------
-    # cache-dir
+    # cache  (subcommand group)
     # -------------------------------------------------------------------------
     p_cache = subparsers.add_parser(
-        "cache-dir",
-        help="Print the cache directory used for downloaded assets",
-        description="Print the base cache directory (~/.cache/unreflectanything or equivalent), or a specific subdir with --weights, --images, --notebooks, or --configs.",
+        "cache",
+        help="Manage the local asset cache",
+        description="Commands for inspecting and managing the UnReflectAnything cache.",
     )
-    p_cache.add_argument(
+    cache_sub = p_cache.add_subparsers(
+        dest="cache_subcommand", metavar="ACTION", required=True,
+    )
+
+    # cache dir
+    p_cache_dir = cache_sub.add_parser(
+        "dir",
+        help="Print the cache directory used for downloaded assets",
+        description=(
+            "Print the base cache directory (~/.cache/unreflectanything or "
+            "equivalent), or a specific subdir with --weights, --images, "
+            "--notebooks, or --configs."
+        ),
+    )
+    p_cache_dir.add_argument(
         "--weights",
         action="store_true",
         help="Print weights cache subdir",
     )
-    p_cache.add_argument(
+    p_cache_dir.add_argument(
         "--images",
         action="store_true",
         help="Print sample images cache subdir",
     )
-    p_cache.add_argument(
+    p_cache_dir.add_argument(
         "--notebooks",
         action="store_true",
         help="Print notebooks cache subdir",
     )
-    p_cache.add_argument(
+    p_cache_dir.add_argument(
         "--configs",
         action="store_true",
         help="Print configs cache subdir",
     )
-    p_cache.set_defaults(func=_run_cache_dir)
+    p_cache_dir.set_defaults(func=_run_cache_dir)
+
+    # cache clear
+    p_cache_clear = cache_sub.add_parser(
+        "clear",
+        help="Delete cached assets",
+        description=(
+            "Delete the entire cache directory (~/.cache/unreflectanything or "
+            "equivalent), or a specific subdir with --weights, --images, "
+            "--notebooks, or --configs."
+        ),
+    )
+    p_cache_clear.add_argument(
+        "--weights",
+        action="store_true",
+        help="Clear only the weights cache subdir",
+    )
+    p_cache_clear.add_argument(
+        "--images",
+        action="store_true",
+        help="Clear only the sample images cache subdir",
+    )
+    p_cache_clear.add_argument(
+        "--notebooks",
+        action="store_true",
+        help="Clear only the notebooks cache subdir",
+    )
+    p_cache_clear.add_argument(
+        "--configs",
+        action="store_true",
+        help="Clear only the configs cache subdir",
+    )
+    p_cache_clear.set_defaults(func=_run_cache_clear)
 
     # -------------------------------------------------------------------------
     # verify (dataset or weights)

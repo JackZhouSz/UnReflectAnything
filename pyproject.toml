@@ -89,7 +89,7 @@ transformers = { git = "https://github.com/huggingface/transformers", rev = "2fe
 include-package-data = true
 zip-safe = false
 # Install "unreflectanything" from directory "endpoints" (keeps import unreflectanything for PyPI)
-packages = ["dataset", "utilities", "unreflectanything", "unreflectanything.data"]
+packages = ["dataset", "utilities", "unreflectanything", "unreflectanything.assets"]
 package-dir = { "unreflectanything" = "endpoints" }
 
 py-modules = [
@@ -109,7 +109,6 @@ py-modules = [
   "models_old",
   "utilities.model",
   "optimization",
-  "polar_highlighter",
   "projections",
   "sweep_agent",
   "test",

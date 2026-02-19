@@ -90,10 +90,8 @@ model_out = unreflectmodel(images)  # [B, 3, H, W] diffuse tensor
 
 # File-based or tensor-based inference (one-shot, no model handle)
 unreflect.inference("input.png", output="output.png")
-result = unreflect.inference(images)  # tensor input returns tensor
-
 unreflect.inference(images, output="output.png")
-result = unreflect.inference(images)  # tensor input returns tensor
+result = unreflect.inference(images)
 
 # Cache directory (where weights, images, etc. are stored)
 weights_dir = unreflect.cache("weights")

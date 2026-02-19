@@ -36,7 +36,7 @@ def download(
 ) -> Union[Path, dict[str, Path]]:
     """Download assets from the HuggingFace repository.
 
-    Same behavior as the CLI ``unreflect download --weights`` / ``--images`` /
+    Same behavior as the CLI ``unreflectanything download --weights`` / ``--images`` /
     ``--notebooks`` / ``--all``.
 
     Args:

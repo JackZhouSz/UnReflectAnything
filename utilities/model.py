@@ -653,5 +653,5 @@ def load_pretrained(
 
     model.eval()
     if verbose:
-        print("✔️  Model loaded and ready for inference")
+        print("[SUCCESS]  Model loaded and ready for inference")
     return model

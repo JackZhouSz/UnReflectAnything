@@ -14,13 +14,23 @@ from pathlib import Path
 
 
 def _config_path() -> Path | None:
-    """Path to the single CLI messages config: env UNREFLECTANYTHING_CLI_MESSAGES or cwd/assets/cli_messages.json."""
+    """Path to the CLI messages config. Lookup order: env UNREFLECTANYTHING_CLI_MESSAGES,
+    then package assets (endpoints/assets/cli_messages.json), then cwd/assets/cli_messages.json.
+    """
     import os
 
     if os.environ.get("UNREFLECTANYTHING_CLI_MESSAGES"):
         p = Path(os.environ["UNREFLECTANYTHING_CLI_MESSAGES"])
         if p.is_file():
             return p
+    try:
+        from importlib.resources import files
+        pkg = files("unreflectanything")
+        p = pkg / "assets" / "cli_messages.json"
+        if p.is_file():
+            return p
+    except Exception:
+        pass
     p = Path.cwd() / "assets" / "cli_messages.json"
     return p if p.is_file() else None
 
@@ -28,9 +38,15 @@ def _config_path() -> Path | None:
 def _print_subcommand_startup_message(subcommand: str | None) -> None:
     """Print optional banner and, when subcommand is set, a short startup line.
 
-    Config: single file from _config_path() (env or cwd/assets/cli_messages.json).
-    - "banner": path string (e.g. "project_ascii_banner.txt" next to config) or list of lines.
-    - "show_banner_for": subcommand names that get the banner; use "help" to show banner for main --help.
+    Config: single file from _config_path() (env override, then
+    endpoints/assets/cli_messages.json, then cwd/assets/cli_messages.json).
+
+    - "banner": path to ASCII banner file (e.g. "project_ascii_banner.txt"), or list of
+      lines. Lookup order: next to config file, then cwd, then package assets
+      (unreflectanything/assets/, i.e. endpoints/assets/ in the repo).
+    - "show_banner_for": list of subcommand names for which the banner is shown.
+      Use "help" to show the banner when running main --help (no subcommand).
+      Example: ["cite", "help"] shows the banner for `unreflect cite` and `unreflect --help`.
     - Per-subcommand keys (e.g. "train") are the one-line message printed after the banner.
     """
     config_path = _config_path()
@@ -59,6 +75,16 @@ def _print_subcommand_startup_message(subcommand: str | None) -> None:
                 )
                 if not banner_path.is_file():
                     banner_path = Path.cwd() / banner
+                if not banner_path.is_file():
+                    # Fallback: package assets (e.g. unreflectanything/assets/project_ascii_banner.txt)
+                    try:
+                        from importlib.resources import files
+                        pkg = files("unreflectanything")
+                        fallback = pkg / "assets" / Path(banner).name
+                        if fallback.is_file():
+                            banner_path = fallback
+                    except Exception:
+                        pass
                 if banner_path.is_file():
                     print(
                         banner_path.read_text(encoding="utf-8"), end="\n\n", flush=True
@@ -93,6 +119,7 @@ def _run_inference(args: argparse.Namespace) -> None:
         dilation=args.dilation,
         resize_output=not args.no_resize,
         verbose=args.verbose,
+        show_progress=True,
     )
 
 
@@ -201,32 +228,20 @@ def _run_download(args: argparse.Namespace) -> None:
     )
 
 
-def _run_download_weights(args: argparse.Namespace) -> None:
-    """Download weights (legacy command) - calls download_.download()."""
-    from .download_ import download
-
-    download(
-        what="weights",
-        output_dir=args.output_dir,
-        variant=args.variant,
-        force=args.force,
-    )
-
-
 def _run_cache_dir(args: argparse.Namespace) -> None:
     """Print the cache directory (base or a specific asset subdir)."""
-    from .cache_ import cache_dir
+    from .cache_ import cache
 
     if args.weights:
-        path = cache_dir("weights")
+        path = cache("weights")
     elif args.images:
-        path = cache_dir("images")
+        path = cache("images")
     elif args.notebooks:
-        path = cache_dir("notebooks")
+        path = cache("notebooks")
     elif args.configs:
-        path = cache_dir("configs")
+        path = cache("configs")
     else:
-        path = cache_dir()
+        path = cache()
     print(path)
 
 
@@ -244,7 +259,16 @@ def _run_cache_clear(args: argparse.Namespace) -> None:
         removed = cache_clear("configs")
     else:
         removed = cache_clear()
-    print(f"Cleared {removed}")
+
+
+def _run_cache(args: argparse.Namespace) -> None:
+    """Dispatch cache --dir and/or --clear."""
+    if not args.dir and not args.clear:
+        args.parser.error("cache: at least one of --dir or --clear is required")
+    if args.dir:
+        _run_cache_dir(args)
+    if args.clear:
+        _run_cache_clear(args)
 
 
 def _run_verify(args: argparse.Namespace) -> None:
@@ -329,66 +353,58 @@ def _run_cite(args: argparse.Namespace) -> None:
     print(citation)
 
 
-def _run_sweep(args: argparse.Namespace) -> None:
-    """Launch a Weights & Biases sweep."""
-    import subprocess
-
-    config_path = Path(args.config).resolve()
-    if not config_path.exists():
-        sys.exit(f"Config file not found: {config_path}")
-    cmd = ["wandb", "sweep", str(config_path)] + (args.passthrough or [])
-    sys.exit(subprocess.run(cmd).returncode)
-
-
-def _run_agent(args: argparse.Namespace) -> None:
-    """Run a W&B sweep agent."""
-    import subprocess
-
-    cmd = ["wandb", "agent"] + (args.passthrough or [])
-    sys.exit(subprocess.run(cmd).returncode)
-
-
 def _run_completion(args: argparse.Namespace) -> None:
-    """Print shell completion script."""
+    """Print or install shell completion script."""
+    import os
+    import sys
+    from pathlib import Path
+
     try:
         from importlib.resources import files
         from rich import print
-
         pkg = files("unreflectanything")
     except Exception:
         import importlib.resources
-
         pkg = importlib.resources.files("unreflectanything")
+
     shell = (args.shell or "").strip().lower()
-    if "zsh" in shell:
-        path = pkg / "assets" / "unreflect-completion.zsh"
-        print(
-            """\nRun the following command to load the completion script
+    if not shell:
+        shell = os.environ.get("SHELL", "bash").split("/")[-1]
 
-[cyan]echo 'source <(unreflectanything completion zsh)' >> ~/.zshrc[/]
+    is_zsh = "zsh" in shell
+    rc_file = Path("~/.zshrc").expanduser() if is_zsh else Path("~/.bashrc").expanduser()
+    asset_file = "unreflect-completion.zsh" if is_zsh else "unreflect-completion.bash"
+    path = pkg / "assets" / asset_file
 
-[white]It will append the following lines to your ~/.zshrc file:\n
-------------------------------------------------------------------------------------------------
-""",
-            end="",
-        )
+    # If stdout is a TTY, offer to install (append to RC)
+    if sys.stdout.isatty():
+        source_line = f'source <(unreflectanything completion {shell})'
+        
+        if rc_file.exists():
+            content = rc_file.read_text(encoding="utf-8")
+            if source_line in content:
+                print(f"[green]✔[/] Shell completion is already installed in [bold]{rc_file}[/].")
+            else:
+                try:
+                    with open(rc_file, "a", encoding="utf-8") as f:
+                        f.write(f"\n# UnReflectAnything completion\n{source_line}\n")
+                    print(f"[green]✔[/] Successfully appended completion to [bold]{rc_file}[/].")
+                    print(f"[white]Please restart your shell or run: [cyan]source {rc_file}[/]")
+                except Exception as e:
+                    print(f"[red]✘[/] Error writing to {rc_file}: {e}")
+                    print(f"[white]You can manually add this line to your {rc_file}:")
+                    print(f"[cyan]{source_line}[/]")
+        else:
+            print(f"[red]✘[/] {rc_file} not found. Please install manually:")
+            print(f"[cyan]{source_line}[/]")
     else:
-        path = pkg / "assets" / "unreflect-completion.bash"
-        print(
-            """\nRun the following command to load the completion script
-
-[cyan]echo 'source <(unreflectanything completion bash)' >> ~/.bashrc[/]
-
-[white]It will append the following lines to your ~/.bashrc file:\n
-------------------------------------------------------------------------------------------------
-""",
-            end="",
-        )
-    text = path.read_text(encoding="utf-8")
-    print(text, end="")
-    print(
-        "------------------------------------------------------------------------------------------------"
-    )
+        # Not a TTY: just print the script itself (for sourcing)
+        if path.is_file():
+            # Use raw stdout to avoid rich formatting for the script itself
+            sys.stdout.write(path.read_text(encoding="utf-8"))
+            sys.stdout.flush()
+        else:
+            sys.exit(1)
 
 
 # =============================================================================
@@ -396,141 +412,48 @@ def _run_completion(args: argparse.Namespace) -> None:
 # =============================================================================
 
 
+def _get_version() -> str:
+    """Return the installed package version (from importlib.metadata)."""
+    try:
+        from importlib.metadata import version
+        return version("unreflectanything")
+    except Exception:
+        return "unknown"
+
+
 def main() -> None:
     """Entry point for the unreflectanything / unreflect / ura console script."""
     parser = argparse.ArgumentParser(
         prog=Path(sys.argv[0]).name or "unreflectanything",
-        description="UnReflectAnything: remove specular reflections from RGB images.",
+        description="UnReflectAnything: RGB-Only Highlight Removal by Rendering Synthetic Specular Supervision",
+    )
+    parser.add_argument(
+        "-v", "--version",
+        action="store_true",
+        help="Show the installed package version and exit.",
     )
     subparsers = parser.add_subparsers(
-        dest="subcommand", metavar="SUBCOMMAND", required=True
+        dest="subcommand", metavar="SUBCOMMAND", required=False
     )
-
-    # -------------------------------------------------------------------------
-    # inference
-    # -------------------------------------------------------------------------
-    p_inf = subparsers.add_parser(
-        "inference",
-        help="Run inference on image(s) to remove reflections",
-        description="Run the UnReflectAnything model to remove specular reflections from images.",
-    )
-    p_inf.add_argument(
-        "input",
-        type=str,
-        help="Input image file or directory",
-    )
-    p_inf.add_argument(
-        "-o",
-        "--output",
-        type=str,
-        default=None,
-        help="Output file/directory (default: ./output/)",
-    )
-    p_inf.add_argument(
-        "-w",
-        "--weights",
-        type=str,
-        default=None,
-        help="Path to model weights (default: ~/.cache/unreflectanything/weights/)",
-    )
-    p_inf.add_argument(
-        "-c",
-        "--config",
-        type=str,
-        default=None,
-        help="Path to inference config YAML file",
-    )
-    p_inf.add_argument(
-        "-d",
-        "--device",
-        type=str,
-        default="cuda",
-        help="CUDA device (e.g. cuda, cuda:0, cuda:1) or cpu (default: cuda)",
-    )
-    p_inf.add_argument(
-        "-b",
-        "--batch-size",
-        type=int,
-        default=4,
-        help="Batch size for inference (default: 4)",
-    )
-    p_inf.add_argument(
-        "-t",
-        "--threshold",
-        type=float,
-        default=0.3,
-        help="Highlight mask threshold (default: 0.3)",
-    )
-    p_inf.add_argument(
-        "--dilation",
-        type=int,
-        default=40,
-        help="Highlight mask dilation in pixels (default: 40)",
-    )
-    p_inf.add_argument(
-        "--no-resize",
-        action="store_true",
-        help="Don't resize output to match original input dimensions",
-    )
-    p_inf.add_argument(
-        "-v",
-        "--verbose",
-        action="store_true",
-        help="Enable verbose output",
-    )
-    p_inf.set_defaults(func=_run_inference)
-
-    # -------------------------------------------------------------------------
-    # train
-    # -------------------------------------------------------------------------
-    p_train = subparsers.add_parser(
-        "train",
-        help="Train the model",
-        description="Train the UnReflectAnything model using the specified configuration.",
-    )
-    p_train.add_argument(
-        "-c",
-        "--config",
-        type=str,
-        default="config_train.yaml",
-        help="Path to training config YAML (default: config_train.yaml)",
-    )
-    p_train.add_argument(
-        "passthrough",
-        nargs="*",
-        help="Additional arguments (--resume-run, --boot, --PARAM=value)",
-    )
-    p_train.set_defaults(func=_run_train)
-
-    # -------------------------------------------------------------------------
-    # test
-    # -------------------------------------------------------------------------
-    p_test = subparsers.add_parser(
-        "test",
-        help="Test/evaluate a trained model",
-        description="Run evaluation on a trained model checkpoint.",
-    )
-    p_test.add_argument(
-        "-c",
-        "--config",
-        type=str,
-        default="config_test.yaml",
-        help="Path to test config YAML (default: config_test.yaml)",
-    )
-    p_test.add_argument(
-        "passthrough",
-        nargs="*",
-        help="Additional arguments (--PARAM=value)",
-    )
-    p_test.set_defaults(func=_run_test)
-
-    # -------------------------------------------------------------------------
+  # -------------------------------------------------------------------------
     # download
     # -------------------------------------------------------------------------
     p_dl = subparsers.add_parser(
         "download",
         help="Download pretrained weights, sample images, notebooks, or configs",
         description="Download assets from the HuggingFace repository.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Download everything
+  unreflectanything download --all
+
+  # Download only weights
+  unreflectanything download --weights
+
+  # Download to custom directory
+  unreflectanything download --all -o /path/to/data/
+""",
     )
     p_dl.add_argument(
         "--weights",
@@ -563,12 +486,14 @@ def main() -> None:
         type=str,
         default=None,
         help="Output directory (default: ~/.cache/unreflectanything/)",
+        metavar="PATH",
     )
     p_dl.add_argument(
         "--variant",
         type=str,
         default="default",
         help="Weights variant to download (default: default)",
+        metavar="NAME",
     )
     p_dl.add_argument(
         "-f",
@@ -577,110 +502,214 @@ def main() -> None:
         help="Force re-download even if files exist",
     )
     p_dl.set_defaults(func=_run_download)
+    # -------------------------------------------------------------------------
+    # inference
+    # -------------------------------------------------------------------------
+    p_inf = subparsers.add_parser(
+        "inference",
+        help="Run inference on image(s) to remove reflections",
+        description="Run the UnReflectAnything model to remove specular reflections from images.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Run on a single image
+  unreflectanything inference input.jpg -o output.jpg
 
-    # -------------------------------------------------------------------------
-    # download-weights (legacy, kept for backwards compatibility)
-    # -------------------------------------------------------------------------
-    p_dl_weights = subparsers.add_parser(
-        "download-weights",
-        help="Download pretrained weights (alias for 'download --weights')",
+  # Run on a directory
+  unreflectanything inference data/inputs/ -o data/outputs/
+
+  # Use specific weights and device
+  unreflectanything inference input.jpg -o output.jpg --weights weights.pt --device cpu
+""",
     )
-    p_dl_weights.add_argument(
+    p_inf.add_argument(
+        "input",
+        type=str,
+        help="Input image file or directory",
+        metavar="INPUT",
+    )
+    p_inf.add_argument(
         "-o",
-        "--output-dir",
+        "--output",
         type=str,
         default=None,
-        help="Directory to save weights (default: cache dir)",
+        help="Output file/directory (default: ./output/)",
+        metavar="PATH",
     )
-    p_dl_weights.add_argument(
-        "--variant",
+    p_inf.add_argument(
+        "-w",
+        "--weights",
         type=str,
-        default="default",
-        help="Weights variant to download (default: default)",
+        default=None,
+        help="Path to model weights (default: ~/.cache/unreflectanything/weights/)",
+        metavar="PATH",
     )
-    p_dl_weights.add_argument(
-        "-f",
-        "--force",
+    p_inf.add_argument(
+        "-c",
+        "--config",
+        type=str,
+        default=None,
+        help="Path to inference config YAML file",
+        metavar="PATH",
+    )
+    p_inf.add_argument(
+        "-d",
+        "--device",
+        type=str,
+        default=None,
+        help="Device: gpu (or cuda), cpu, or cuda:0, cuda:1, etc. If not set, auto-detect (CUDA if available, else CPU)",
+        metavar="DEVICE",
+    )
+    p_inf.add_argument(
+        "-b",
+        "--batch-size",
+        type=int,
+        default=4,
+        help="Batch size for inference (default: 4)",
+        metavar="N",
+    )
+    p_inf.add_argument(
+        "-t",
+        "--threshold",
+        type=float,
+        default=0.3,
+        help="Highlight mask threshold (default: 0.3)",
+        metavar="FLOAT",
+    )
+    p_inf.add_argument(
+        "--dilation",
+        type=int,
+        default=40,
+        help="Highlight mask dilation in pixels (default: 40)",
+        metavar="INT",
+    )
+    p_inf.add_argument(
+        "--no-resize",
         action="store_true",
-        help="Re-download even if already present",
+        help="Don't resize output to match original input dimensions",
     )
-    p_dl_weights.set_defaults(func=_run_download_weights)
+    p_inf.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Enable verbose output",
+    )
+    p_inf.set_defaults(func=_run_inference)
 
     # -------------------------------------------------------------------------
-    # cache  (subcommand group)
+    # train
+    # -------------------------------------------------------------------------
+#     p_train = subparsers.add_parser(
+#         "train",
+#         help="Train the model",
+#         description="Train the UnReflectAnything model using the specified configuration.",
+#         formatter_class=argparse.RawDescriptionHelpFormatter,
+#         epilog="""
+# Examples:
+#   # Train with default config
+#   unreflectanything train
+
+#   # Override config parameters
+#   unreflectanything train --EPOCHS=50 --BATCH_SIZE=8
+
+#   # Resume from a run
+#   unreflectanything train --resume-run my-run-id
+# """,
+#     )
+#     p_train.add_argument(
+#         "-c",
+#         "--config",
+#         type=str,
+#         default="config_train.yaml",
+#         help="Path to training config YAML (default: config_train.yaml)",
+#         metavar="PATH",
+#     )
+#     p_train.add_argument(
+#         "passthrough",
+#         nargs="*",
+#         help="Additional arguments (--resume-run, --boot, --PARAM=value)",
+#         metavar="ARGS",
+#     )
+#     p_train.set_defaults(func=_run_train)
+
+#     # -------------------------------------------------------------------------
+#     # test
+#     # -------------------------------------------------------------------------
+#     p_test = subparsers.add_parser(
+#         "test",
+#         help="Test/evaluate a trained model",
+#         description="Run evaluation on a trained model checkpoint.",
+#         formatter_class=argparse.RawDescriptionHelpFormatter,
+#         epilog="""
+# Examples:
+#   # Test with default config
+#   unreflectanything test
+
+#   # Specify run ID
+#   unreflectanything test --RUN=my-run-id
+# """,
+#     )
+#     p_test.add_argument(
+#         "-c",
+#         "--config",
+#         type=str,
+#         default="config_test.yaml",
+#         help="Path to test config YAML (default: config_test.yaml)",
+#         metavar="PATH",
+#     )
+#     p_test.add_argument(
+#         "passthrough",
+#         nargs="*",
+#         help="Additional arguments (--PARAM=value)",
+#         metavar="ARGS",
+#     )
+#     p_test.set_defaults(func=_run_test)
+
+  
+
+    # -------------------------------------------------------------------------
+    # cache  (--dir and/or --clear, with optional subdir flags)
     # -------------------------------------------------------------------------
     p_cache = subparsers.add_parser(
         "cache",
         help="Manage the local asset cache",
-        description="Commands for inspecting and managing the UnReflectAnything cache.",
+        description=(
+            "Print the cache directory (--dir) and/or clear cached assets (--clear). "
+            "Use --weights, --images, --notebooks, or --configs to limit to a subdir; "
+            "omit for base dir (~/.cache/unreflectanything or equivalent)."
+        ),
     )
-    cache_sub = p_cache.add_subparsers(
-        dest="cache_subcommand", metavar="ACTION", required=True,
-    )
-
-    # cache dir
-    p_cache_dir = cache_sub.add_parser(
-        "dir",
+    p_cache.add_argument(
+        "--dir",
+        action="store_true",
         help="Print the cache directory used for downloaded assets",
-        description=(
-            "Print the base cache directory (~/.cache/unreflectanything or "
-            "equivalent), or a specific subdir with --weights, --images, "
-            "--notebooks, or --configs."
-        ),
     )
-    p_cache_dir.add_argument(
-        "--weights",
+    p_cache.add_argument(
+        "--clear",
         action="store_true",
-        help="Print weights cache subdir",
-    )
-    p_cache_dir.add_argument(
-        "--images",
-        action="store_true",
-        help="Print sample images cache subdir",
-    )
-    p_cache_dir.add_argument(
-        "--notebooks",
-        action="store_true",
-        help="Print notebooks cache subdir",
-    )
-    p_cache_dir.add_argument(
-        "--configs",
-        action="store_true",
-        help="Print configs cache subdir",
-    )
-    p_cache_dir.set_defaults(func=_run_cache_dir)
-
-    # cache clear
-    p_cache_clear = cache_sub.add_parser(
-        "clear",
         help="Delete cached assets",
-        description=(
-            "Delete the entire cache directory (~/.cache/unreflectanything or "
-            "equivalent), or a specific subdir with --weights, --images, "
-            "--notebooks, or --configs."
-        ),
     )
-    p_cache_clear.add_argument(
+    p_cache.add_argument(
         "--weights",
         action="store_true",
-        help="Clear only the weights cache subdir",
+        help="Limit to weights cache subdir (for --dir or --clear)",
     )
-    p_cache_clear.add_argument(
+    p_cache.add_argument(
         "--images",
         action="store_true",
-        help="Clear only the sample images cache subdir",
+        help="Limit to sample images cache subdir (for --dir or --clear)",
     )
-    p_cache_clear.add_argument(
+    p_cache.add_argument(
         "--notebooks",
         action="store_true",
-        help="Clear only the notebooks cache subdir",
+        help="Limit to notebooks cache subdir (for --dir or --clear)",
     )
-    p_cache_clear.add_argument(
+    p_cache.add_argument(
         "--configs",
         action="store_true",
-        help="Clear only the configs cache subdir",
+        help="Limit to configs cache subdir (for --dir or --clear)",
     )
-    p_cache_clear.set_defaults(func=_run_cache_clear)
+    p_cache.set_defaults(func=_run_cache)
 
     # -------------------------------------------------------------------------
     # verify (dataset or weights)
@@ -689,6 +718,15 @@ def main() -> None:
         "verify",
         help="Verify dataset structure or weights integrity",
         description="Verify either that a dataset has the correct structure (--dataset) or that weights are downloaded and load into the model with no key alignment errors (--weights).",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Verify weights
+  unreflectanything verify --weights
+
+  # Verify dataset structure
+  unreflectanything verify --dataset --path /data/my_dataset
+""",
     )
     p_verify.add_argument(
         "--dataset",
@@ -706,6 +744,7 @@ def main() -> None:
         type=str,
         default=None,
         help="Dataset root directory (required when --dataset)",
+        metavar="PATH",
     )
     p_verify.add_argument(
         "--weights-path",
@@ -713,6 +752,7 @@ def main() -> None:
         type=str,
         default=None,
         help="Path to weights file (optional when --weights; default: cache)",
+        metavar="PATH",
     )
     p_verify.add_argument(
         "--type",
@@ -720,6 +760,7 @@ def main() -> None:
         type=str,
         default=None,
         help="Dataset type: SCRREAM, HOUSECAT6D, POLARGB, etc. (auto-detect if not specified; only with --dataset)",
+        metavar="NAME",
     )
     p_verify.add_argument(
         "--config",
@@ -727,6 +768,7 @@ def main() -> None:
         type=str,
         default=None,
         help="Config file for dataset verification (only with --dataset)",
+        metavar="PATH",
     )
     p_verify.add_argument(
         "--model-config",
@@ -734,54 +776,69 @@ def main() -> None:
         type=str,
         default=None,
         help="Model config YAML for weights verification if checkpoint has no embedded config (only with --weights)",
+        metavar="PATH",
     )
     p_verify.set_defaults(func=_run_verify)
 
-    # -------------------------------------------------------------------------
-    # evaluate
-    # -------------------------------------------------------------------------
-    p_eval = subparsers.add_parser(
-        "evaluate",
-        help="Compute evaluation metrics between output and reference images",
-        description="Calculate image quality metrics comparing model outputs to ground truth.",
-    )
-    p_eval.add_argument(
-        "output",
-        type=str,
-        help="Output image or directory to evaluate",
-    )
-    p_eval.add_argument(
-        "reference",
-        type=str,
-        help="Reference (ground truth) image or directory",
-    )
-    p_eval.add_argument(
-        "--metrics",
-        "-m",
-        type=str,
-        default=None,
-        help="Comma-separated list of metrics: psnr,ssim,mse,deltaE2000,gmsd,dists",
-    )
-    p_eval.add_argument(
-        "--all",
-        "-a",
-        action="store_true",
-        help="Compute all available metrics",
-    )
-    p_eval.add_argument(
-        "--mask",
-        type=str,
-        default=None,
-        help="Optional mask for masked evaluation",
-    )
-    p_eval.add_argument(
-        "-o",
-        "--output-file",
-        type=str,
-        default=None,
-        help="Save results to JSON file",
-    )
-    p_eval.set_defaults(func=_run_evaluate)
+#     # -------------------------------------------------------------------------
+#     # evaluate
+#     # -------------------------------------------------------------------------
+#     p_eval = subparsers.add_parser(
+#         "evaluate",
+#         help="Compute evaluation metrics between output and reference images",
+#         description="Calculate image quality metrics comparing model outputs to ground truth.",
+#         formatter_class=argparse.RawDescriptionHelpFormatter,
+#         epilog="""
+# Examples:
+#   # Compute all metrics
+#   unreflectanything evaluate outputs/ ground_truth/ -a
+
+#   # Compute specific metrics and save to JSON
+#   unreflectanything evaluate outputs/ ground_truth/ -m psnr,ssim -o results.json
+# """,
+#     )
+#     p_eval.add_argument(
+#         "output",
+#         type=str,
+#         help="Output image or directory to evaluate",
+#         metavar="OUTPUT",
+#     )
+#     p_eval.add_argument(
+#         "reference",
+#         type=str,
+#         help="Reference (ground truth) image or directory",
+#         metavar="REFERENCE",
+#     )
+#     p_eval.add_argument(
+#         "--metrics",
+#         "-m",
+#         type=str,
+#         default=None,
+#         help="Comma-separated list of metrics: psnr,ssim,mse,deltaE2000,gmsd,dists",
+#         metavar="LIST",
+#     )
+#     p_eval.add_argument(
+#         "--all",
+#         "-a",
+#         action="store_true",
+#         help="Compute all available metrics",
+#     )
+#     p_eval.add_argument(
+#         "--mask",
+#         type=str,
+#         default=None,
+#         help="Optional mask for masked evaluation",
+#         metavar="PATH",
+#     )
+#     p_eval.add_argument(
+#         "-o",
+#         "--output-file",
+#         type=str,
+#         default=None,
+#         help="Save results to JSON file",
+#         metavar="PATH",
+#     )
+#     p_eval.set_defaults(func=_run_evaluate)
 
     # -------------------------------------------------------------------------
     # cite
@@ -790,6 +847,15 @@ def main() -> None:
         "cite",
         help="Print citation for UnReflectAnything",
         description="Output the citation for this project in various formats.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # BibTeX (default)
+  unreflectanything cite
+
+  # APA format
+  unreflectanything cite --apa
+""",
     )
     p_cite.add_argument(
         "--bibtex",
@@ -819,40 +885,6 @@ def main() -> None:
     p_cite.set_defaults(func=_run_cite)
 
     # -------------------------------------------------------------------------
-    # sweep (W&B)
-    # -------------------------------------------------------------------------
-    p_sweep = subparsers.add_parser(
-        "sweep",
-        help="Launch a Weights & Biases sweep",
-    )
-    p_sweep.add_argument(
-        "--config",
-        type=str,
-        default="config_sweep.yaml",
-        help="Path to sweep config YAML (default: config_sweep.yaml)",
-    )
-    p_sweep.add_argument(
-        "passthrough",
-        nargs="*",
-        help="Arguments passed to wandb sweep",
-    )
-    p_sweep.set_defaults(func=_run_sweep)
-
-    # -------------------------------------------------------------------------
-    # agent (W&B)
-    # -------------------------------------------------------------------------
-    p_agent = subparsers.add_parser(
-        "agent",
-        help="Run a W&B sweep agent",
-    )
-    p_agent.add_argument(
-        "passthrough",
-        nargs="*",
-        help="Arguments passed to wandb agent (e.g. sweep ID)",
-    )
-    p_agent.set_defaults(func=_run_agent)
-
-    # -------------------------------------------------------------------------
     # completion
     # -------------------------------------------------------------------------
     p_comp = subparsers.add_parser(
@@ -877,11 +909,15 @@ def main() -> None:
 
     args = parser.parse_args()
 
+    if getattr(args, "version", False):
+        print(_get_version())
+        sys.exit(0)
     if args.subcommand is None:
         parser.print_help()
         sys.exit(1)
 
     _print_subcommand_startup_message(args.subcommand)
+    args.parser = parser
     args.func(args)
 
 

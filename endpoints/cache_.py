@@ -5,20 +5,20 @@ weights, images, notebooks, and config files.
 
 Python API::
 
-    from unreflectanything import cache_dir, cache_clear
+    from unreflectanything import cache, cache_clear
 
-    base   = cache_dir()              # ~/.cache/unreflectanything
-    wdir   = cache_dir("weights")     # ~/.cache/unreflectanything/weights
+    base   = cache()                  # ~/.cache/unreflectanything
+    wdir   = cache("weights")         # ~/.cache/unreflectanything/weights
 
     cache_clear("weights")            # delete weights subdir
     cache_clear()                     # delete entire cache
 
 CLI::
 
-    unreflectanything cache dir
-    unreflectanything cache dir --weights
-    unreflectanything cache clear --weights
-    unreflectanything cache clear            # everything
+    unreflectanything cache --dir
+    unreflectanything cache --dir --weights
+    unreflectanything cache --clear --weights
+    unreflectanything cache --clear            # everything
 """
 
 from __future__ import annotations
@@ -65,35 +65,39 @@ def get_cache_dir(subdir: Optional[str] = "") -> Path:
     return Path(base).expanduser().resolve() / "unreflectanything" / subdir
 
 
-def cache_dir(subdir: Optional[str] = None) -> Path:
+def cache(asset_name: Optional[str] = None) -> Path:
     """Return the cache directory for UnReflectAnything assets.
 
-    This is the recommended public API.  Passing *no* argument (or ``None``)
-    returns the base cache directory; passing a valid subdirectory name returns
-    the path for that specific asset type.
+    Called with no argument (or ``None``) returns the base cache directory;
+    passing an asset name returns the path for that asset subdir.
 
     Args:
-        subdir: ``"weights"`` | ``"images"`` | ``"notebooks"`` | ``"configs"``
+        asset_name: ``"weights"`` | ``"images"`` | ``"notebooks"`` | ``"configs"``
             | ``None``.  ``None`` returns the base directory.
 
     Returns:
         Resolved :class:`~pathlib.Path`.
     """
-    return get_cache_dir(subdir if subdir is not None else "")
+    return get_cache_dir(asset_name if asset_name is not None else "")
 
 
-def cache_clear(subdir: Optional[str] = None) -> Path:
+def cache_dir(subdir: Optional[str] = None) -> Path:
+    """Return the cache directory (alias for :func:`cache`). Deprecated: use ``cache()``."""
+    return cache(subdir)
+
+
+def cache_clear(asset_name: Optional[str] = None) -> Path:
     """Delete the cache directory (or a specific asset subdirectory).
 
     Args:
-        subdir: ``"weights"`` | ``"images"`` | ``"notebooks"`` | ``"configs"``
+        asset_name: ``"weights"`` | ``"images"`` | ``"notebooks"`` | ``"configs"``
             to delete only that subdirectory, or ``None`` to delete the entire
             ``unreflectanything`` cache tree.
 
     Returns:
         The :class:`~pathlib.Path` that was removed (even if it did not exist).
     """
-    target = cache_dir(subdir)
+    target = cache(asset_name)
     if target.exists():
         shutil.rmtree(target)
-    return target
+    print(f"Cleared {target}")

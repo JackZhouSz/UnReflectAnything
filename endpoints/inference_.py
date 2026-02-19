@@ -14,6 +14,8 @@ from os import PathLike
 
 import torch
 
+__all__ = ["inference"]
+
 
 def _config_to_path_or_none(
     config: Optional[Union[str, PathLike, Path, dict]],
@@ -37,7 +39,7 @@ def _ensure_model(
         return model
 
     from ._shared import DEFAULT_WEIGHTS_FILENAME, get_cache_dir, _resolve_device
-    from .model_ import model as model_factory
+    from .model_ import model
 
     resolved_weights = (
         get_cache_dir("weights") / DEFAULT_WEIGHTS_FILENAME
@@ -47,12 +49,12 @@ def _ensure_model(
     if not resolved_weights.exists():
         raise FileNotFoundError(
             f"Weights not found at {resolved_weights}. "
-            "Run 'unreflect download --weights' first."
+            "Run 'unreflectanything download --weights' first."
         )
-    return model_factory(
+    return model(
         pretrained=True,
         weights_path=resolved_weights,
-        config_path=_config_to_path_or_none(config),
+        # config_path=_config_to_path_or_none(config),
         device=torch.device(_resolve_device(device)),
         verbose=verbose,
     )
@@ -78,13 +80,14 @@ def inference(
     output: Optional[Union[str, PathLike, Path]] = None,
     weights_path: Optional[Union[str, PathLike, Path]] = None,
     config: Optional[Union[str, PathLike, Path, dict]] = None,
-    device: str = "cuda",
+    device: Optional[str] = None,
     batch_size: int = 4,
     threshold: float = 0.3,
     dilation: int = 40,
     resize_output: bool = True,
     verbose: bool = False,
     model: Optional[Any] = None,
+    show_progress: bool = False,
 ) -> Optional[torch.Tensor]:
     """Run inference on input image(s) to remove specular reflections.
 
@@ -99,7 +102,8 @@ def inference(
         weights_path: Checkpoint path.  Ignored when *model* is provided.
         config: Architecture config (YAML path or dict).  Ignored when
             *model* is provided.
-        device: Target device string.  Ignored when *model* is provided.
+        device: Target device: ``"cuda"`` / ``"gpu"`` or ``"cpu"``.  If ``None``,
+            auto-detected (CUDA if available, else CPU).  Ignored when *model* is provided.
         batch_size: Images per forward pass when processing directories.
         threshold: Highlight-mask threshold passed to the model (default 0.3).
         dilation: Highlight-mask dilation in pixels passed to the model
@@ -109,12 +113,23 @@ def inference(
         model: Pre-built ``UnReflectModel`` instance.  When provided the
             function skips model creation (weights_path / config / device
             are ignored).
+        show_progress: If ``True``, show a tqdm progress bar over images (used by CLI).
 
     Returns:
         ``[B, 3, H, W]`` diffuse tensor when *output* is ``None``, else
         ``None`` (results written to disk).
     """
     from torch import Tensor
+    from ._shared import _resolve_device
+
+    if device is None or (isinstance(device, str) and not device.strip()):
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+    else:
+        device = device.strip().lower()
+        if device == "gpu":
+            device = "cuda"
+    device = _resolve_device(device)
+    print(f"Using device: {device}")
 
     is_tensor_input = isinstance(input, Tensor)
 
@@ -151,13 +166,21 @@ def inference(
                 resize_output=resize_output,
                 verbose=verbose,
             )
-
-    output_path = Path(output).expanduser().resolve()
-    output_path.mkdir(parents=True, exist_ok=True)
-
-    if model is not None:
+    else:
+        output_path = Path(output).expanduser().resolve()
+        # Single file in → allow output to be a file path; dir in → output is a dir
+        from ._shared import DEFAULT_IMAGE_EXTENSIONS
+        output_is_file = (
+            input_path.is_file()
+            and output_path.suffix.lower() in DEFAULT_IMAGE_EXTENSIONS
+        )
+        if output_is_file:
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+        else:
+            output_path.mkdir(parents=True, exist_ok=True)
+        mdl = _ensure_model(model, weights_path, config, device, verbose)
         _inference_files_save(
-            model=model,
+            model=mdl,
             input_path=input_path,
             output_path=output_path,
             batch_size=batch_size,
@@ -165,45 +188,9 @@ def inference(
             dilation=dilation,
             resize_output=resize_output,
             verbose=verbose,
+            show_progress=show_progress,
         )
         return None
-
-    # Legacy path: delegate to the standalone inference runner
-    from inference import InferenceOptions, run_inference as _run_inference_files
-
-    from ._shared import (
-        DEFAULT_WEIGHTS_FILENAME,
-        get_cache_dir,
-        _apply_config_to_options,
-        _resolve_device,
-    )
-
-    resolved_weights = (
-        get_cache_dir("weights") / DEFAULT_WEIGHTS_FILENAME
-        if weights_path is None
-        else Path(weights_path).expanduser().resolve()
-    )
-    if not resolved_weights.exists():
-        raise FileNotFoundError(
-            f"Weights not found at {resolved_weights}. "
-            "Run 'unreflect download --weights' first."
-        )
-
-    options = InferenceOptions(
-        weights_path=resolved_weights,
-        input_dir=input_path if input_path.is_dir() else input_path.parent,
-        output_dir=output_path if output_path.is_dir() else output_path.parent,
-        device=_resolve_device(device),
-        batch_size=batch_size,
-        brightness_threshold=threshold,
-        inpaint_mask_dilation=dilation,
-        resize_output=resize_output,
-        monitor_usage=False,
-    )
-    if config is not None:
-        options = _apply_config_to_options(options, config)
-    _run_inference_files(options)
-    return None
 
 
 # ---------------------------------------------------------------------------
@@ -317,6 +304,7 @@ def _inference_files_save(
     dilation: int = 40,
     resize_output: bool = True,
     verbose: bool = False,
+    show_progress: bool = False,
 ) -> None:
     """Run model forward on image files and save results to disk."""
     from PIL import Image
@@ -334,7 +322,15 @@ def _inference_files_save(
     target_size = (target_side, target_side)
 
     input_dir = input_path if input_path.is_dir() else input_path.parent
-    output_dir = output_path if output_path.is_dir() else output_path.parent
+    # Single file out: output_path is the exact destination file; else output is a dir
+    output_is_single_file = (
+        input_path.is_file() and bool(output_path.suffix)
+        and output_path.suffix.lower() in DEFAULT_IMAGE_EXTENSIONS
+    )
+    output_dir = (
+        output_path.parent if output_is_single_file
+        else (output_path if output_path.is_dir() else output_path.parent)
+    )
     image_paths = (
         [input_path]
         if input_path.is_file()
@@ -342,6 +338,12 @@ def _inference_files_save(
     )
 
     model.eval()
+
+    if show_progress:
+        from tqdm import tqdm
+        pbar = tqdm(total=len(image_paths), unit="img", desc="Inference")
+    else:
+        pbar = None
 
     for i in range(0, len(image_paths), batch_size):
         batch_paths = image_paths[i : i + batch_size]
@@ -366,14 +368,27 @@ def _inference_files_save(
                 dilation=dilation,
             )  # [B, 3, H, W]
 
-        save_diffuse_batch(
-            diffuse,
-            batch_paths,
-            input_dir,
-            output_dir,
-            original_sizes=original_sizes if resize_output else None,
-            resize_output=resize_output,
-        )
+        if output_is_single_file and len(batch_paths) == 1:
+            # Save single image to the exact output file path
+            out_tensor = diffuse[0].clamp(0.0, 1.0).cpu()
+            if resize_output and original_sizes:
+                out_tensor = TF.resize(out_tensor, original_sizes[0], antialias=True)
+            TF.to_pil_image(out_tensor).save(output_path)
+        else:
+            save_diffuse_batch(
+                diffuse,
+                batch_paths,
+                input_dir,
+                output_dir,
+                original_sizes=original_sizes if resize_output else None,
+                resize_output=resize_output,
+            )
+
+        if pbar is not None:
+            pbar.update(len(batch_paths))
+
+    if pbar is not None:
+        pbar.close()
 
 
 # ---------------------------------------------------------------------------
@@ -452,7 +467,7 @@ def parse_cli():
 
     output_dir.mkdir(parents=True, exist_ok=True)
     print(
-        "✔️  Configuration loaded",
+        "[SUCCESS]  Configuration loaded",
     )
 
     batch_size = int(raw_options.get("batch_size", 4))

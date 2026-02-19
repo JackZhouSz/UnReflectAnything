@@ -7,6 +7,8 @@ from typing import Literal, Optional, Union
 
 from os import PathLike
 
+__all__ = ["verify", "verify_dataset"]
+
 
 def _verify_weights_impl(
     weights_path: Optional[Union[str, PathLike, Path]] = None,
@@ -14,9 +16,9 @@ def _verify_weights_impl(
 ) -> bool:
     """Verify weights file exists and loads into model with no key alignment errors."""
     import torch
-    from utilities.model import load_pretrained
 
     from ._shared import DEFAULT_WEIGHTS_FILENAME, get_cache_dir
+    from .model_ import model
 
     if weights_path is None:
         resolved = get_cache_dir("weights") / DEFAULT_WEIGHTS_FILENAME
@@ -34,18 +36,19 @@ def _verify_weights_impl(
 
     try:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        load_pretrained(
+        model(
+            pretrained=True,
             weights_path=resolved,
             config_path=config_path,
             device=str(device),
             strict=True,
             verbose=False,
         )
-        print("✔️  Weights verified: loaded into model with no key alignment errors.")
+        print("[SUCCESS]  Weights verified: loaded into model with no key alignment errors.")
         return True
     except (KeyError, RuntimeError, FileNotFoundError) as e:
-        print(f"❌  Weights verification failed: {e}")
-        print("Download the model weights with 'unreflect download --weights'")
+        print(f"[FAILED]  Weights verification failed: {e}")
+        print("Download the model weights with 'unreflectanything download --weights'")
         return False
 
 
@@ -61,54 +64,82 @@ def _verify_dataset_impl(
     from dataset import UnReflectAnything_Dataset
     from dataset.wrappers import DATASET_DEFAULTS, _identity_kwargs_for
 
-    # Types to try (order matters for auto-detect). RGBP uses generic defaults.
-    dataset_type_keys = ["SCRREAM", "HOUSECAT6D", "POLARGB", "RGBP"]
-
-    def _make_ds(name: str):
-        kwargs = _identity_kwargs_for(name)
-        kwargs["root_dir"] = str(dataset_path)
-        kwargs["target_size"] = (224, 224)
-        kwargs["few_images"] = True
-        return UnReflectAnything_Dataset(**kwargs)
-
-    if dataset_type is None:
-        for name in dataset_type_keys:
-            try:
-                ds = _make_ds(name)
-                if len(ds) > 0:
-                    print(f"Detected dataset type: {name}")
-                    print(f"Found {len(ds)} samples")
-                    return True
-            except Exception:
-                continue
-        print("Could not auto-detect dataset type")
-        return False
-
-    dataset_type_upper = dataset_type.upper()
-    if dataset_type_upper not in dataset_type_keys:
-        print(f"Unknown dataset type: {dataset_type}")
-        print(f"Available types: {dataset_type_keys}")
-        return False
-
-    try:
-        ds = _make_ds(dataset_type_upper)
-        sample_count = len(ds)
-        if sample_count > 0:
-            print(f"Dataset '{dataset_type}' verified successfully!")
-            print(f"Found {sample_count} samples")
-            try:
+    def _try_ds(name: str) -> Optional[UnReflectAnything_Dataset]:
+        """Attempt to instantiate UnReflectAnything_Dataset with a given identity default."""
+        try:
+            kwargs = _identity_kwargs_for(name)
+            kwargs.update({
+                "root_dir": str(dataset_path),
+                "target_size": (224, 224),
+                "few_images": True,
+            })
+            ds = UnReflectAnything_Dataset(**kwargs)
+            if len(ds) > 0:
+                # Test load first sample to ensure it's not just an empty directory structure
                 _ = ds[0]
-                print("Sample loading: OK")
-            except Exception as e:
-                print(f"Warning: Sample loading failed: {e}")
-                return False
+                return ds
+        except Exception:
+            pass
+        return None
+
+    # 1. Explicit type provided: verify that specific wrapper/config
+    if dataset_type is not None:
+        ds = _try_ds(dataset_type.upper())
+        if ds:
+            print(f"[SUCCESS]  Dataset '{dataset_type}' verified: {len(ds)} samples found.")
             return True
         else:
-            print(f"Dataset '{dataset_type}' has no samples")
+            print(f"[FAILED]  Dataset verification failed for explicit type '{dataset_type}' at {dataset_path}")
             return False
-    except Exception as e:
-        print(f"Dataset verification failed: {e}")
-        return False
+
+    # 2. Auto-detection (wrapper-agnostic discovery)
+    print(f"Auto-detecting dataset structure at: {dataset_path}")
+
+    # First, try generic defaults (works for most standardized datasets)
+    # Using 'RGBP' as a placeholder to get _GENERIC defaults from wrappers.py
+    ds = _try_ds("RGBP")
+    if ds:
+        print(f"[SUCCESS]  Detected standard dataset structure: {len(ds)} samples found.")
+        return True
+
+    # Second, try all known configurations in DATASET_DEFAULTS
+    # This covers datasets with non-standard folder names or extensions
+    for name in DATASET_DEFAULTS.keys():
+        ds = _try_ds(name)
+        if ds:
+            print(f"[SUCCESS]  Detected structure matching type '{name}': {len(ds)} samples found.")
+            return True
+
+    # Third, structural fallback: scan subdirectories for common patterns
+    common_rgb_dirs = ["rgb", "frames", "video_frames", "specular", "diffuse", "raw"]
+    common_exts = [".png", ".jpg", ".jpeg", ".npy"]
+
+    try:
+        scenes = sorted([d for d in dataset_path.iterdir() if d.is_dir()])
+        for scene in scenes[:5]:  # Check first few potential scene directories
+            for rgb_dir in common_rgb_dirs:
+                if (scene / rgb_dir).is_dir():
+                    for ext in common_exts:
+                        try:
+                            ds = UnReflectAnything_Dataset(
+                                root_dir=str(dataset_path),
+                                rgb_dir_name=rgb_dir,
+                                rgb_ext=ext,
+                                few_images=True,
+                                target_size=(224, 224),
+                            )
+                            if len(ds) > 0:
+                                _ = ds[0]
+                                print(f"[SUCCESS]  Detected custom dataset structure: rgb_dir='{rgb_dir}', ext='{ext}' ({len(ds)} samples)")
+                                return True
+                        except Exception:
+                            continue
+    except Exception:
+        pass
+
+    print(f"[FAILED]  Dataset verification failed: Could not find a valid structure in {dataset_path}")
+    print("Ensure the directory contains subfolders (scenes), each containing an 'rgb' (or similar) folder with images.")
+    return False
 
 
 def verify(
@@ -141,7 +172,7 @@ def verify(
         if path is None:
             raise ValueError("path is required when what='dataset'")
         return _verify_dataset_impl(
-            path=Path(path).expanduser().resolve(),
+            dataset_path=Path(path).expanduser().resolve(),
             dataset_type=dataset_type,
             config=config,
         )

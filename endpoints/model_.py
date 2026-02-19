@@ -246,7 +246,7 @@ class UnReflectModel(_nn_module_base()):
         if not resolved.exists():
             raise FileNotFoundError(
                 f"Weights file not found at '{resolved}'.\n"
-                "Run 'unreflect download --weights' or "
+                "Run 'unreflectanything download --weights' or "
                 "unreflectanything.download('weights') first."
             )
         if verbose:

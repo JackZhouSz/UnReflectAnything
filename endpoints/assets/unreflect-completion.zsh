@@ -1,6 +1,6 @@
 _unreflectanything() {
     local -a subcommands
-    subcommands=(train test inference sweep agent completion download verify verify cite)
+    subcommands=(train test inference download cache verify evaluate cite completion)
     _arguments -C \
         '(-h --help)'{-h,--help}'[Show help and exit]' \
         '1:subcommand:($subcommands)' \

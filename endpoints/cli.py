@@ -378,25 +378,28 @@ def _run_completion(args: argparse.Namespace) -> None:
 
     # If stdout is a TTY, offer to install (append to RC)
     if sys.stdout.isatty():
+        # Guard so that if the package is uninstalled, sourcing RC does not show "command not found"
         source_line = f'source <(unreflectanything completion {shell})'
-        
+        guarded_line = f'command -v unreflectanything &>/dev/null && {source_line}'
+        block = f"\n# UnReflectAnything completion (no-op if uninstalled)\n{guarded_line}\n"
+
         if rc_file.exists():
             content = rc_file.read_text(encoding="utf-8")
-            if source_line in content:
+            if source_line in content or guarded_line in content:
                 print(f"[green]✔[/] Shell completion is already installed in [bold]{rc_file}[/].")
             else:
                 try:
                     with open(rc_file, "a", encoding="utf-8") as f:
-                        f.write(f"\n# UnReflectAnything completion\n{source_line}\n")
+                        f.write(block)
                     print(f"[green]✔[/] Successfully appended completion to [bold]{rc_file}[/].")
                     print(f"[white]Please restart your shell or run: [cyan]source {rc_file}[/]")
                 except Exception as e:
                     print(f"[red]✘[/] Error writing to {rc_file}: {e}")
                     print(f"[white]You can manually add this line to your {rc_file}:")
-                    print(f"[cyan]{source_line}[/]")
+                    print(f"[cyan]{guarded_line}[/]")
         else:
             print(f"[red]✘[/] {rc_file} not found. Please install manually:")
-            print(f"[cyan]{source_line}[/]")
+            print(f"[cyan]{guarded_line}[/]")
     else:
         # Not a TTY: just print the script itself (for sourcing)
         if path.is_file():

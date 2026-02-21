@@ -1,8 +1,9 @@
+import math
 import random
 import time
 from collections import defaultdict
 from functools import wraps
-from typing import Tuple
+from typing import Tuple, Union, Sequence
 
 import numpy as np
 import torch
@@ -19,6 +20,31 @@ from moge.model.v2 import MoGeModel
 def _smoothstep(x, e0, e1):
     t = ((x - e0) / (e1 - e0)).clamp(0, 1)
     return t * t * (3 - 2 * t)
+
+
+def _resolve_highlight_param(
+    value: Union[float, Sequence[float]],
+    batch_size: int,
+    device: torch.device,
+    log_uniform: bool = False,
+) -> Union[float, torch.Tensor]:
+    """
+    Resolve a highlight config value to a scalar or per-sample tensor [B].
+    If value is a sequence of two numbers [min, max], sample batch_size values:
+    - log_uniform=True: log-uniform in [min, max] (for surface roughness).
+    - log_uniform=False: uniform in [min, max] (for intensity).
+    Otherwise return the scalar as-is (backward compatible).
+    """
+    if isinstance(value, (list, tuple)) and len(value) == 2:
+        lo, hi = float(value[0]), float(value[1])
+        if log_uniform:
+            u = torch.rand(batch_size, device=device, dtype=torch.float32)
+            log_lo = math.log(lo)
+            log_hi = math.log(hi)
+            return torch.exp(log_lo + u * (log_hi - log_lo))  # [B]
+        u = torch.rand(batch_size, device=device, dtype=torch.float32)
+        return u * (hi - lo) + lo  # [B]
+    return value
 
 
 @torch.no_grad()
@@ -929,8 +955,8 @@ class HighlightRender(nn.Module):
             pol: Optional [B,3,H,W] Stokes (S0,S1,S2); if provided, returns stokes_highlighted
             light_pos: Optional [B,3] light positions; sampled if None
             intrinsic: [B,3,3] intrinsics or "compute" to use MoGe intrinsics
-            surface_roughness: Base Blinn-Phong exponent α (higher = sharper highlight)
-            intensity: Specular strength multiplier
+            surface_roughness: Base Blinn-Phong exponent α (float or [min, max]; if range, sampled log-uniform per sample)
+            intensity: Specular strength multiplier (float or [min, max]; if range, sampled uniform per sample)
             # Geometric roughness parameters
             n_blobs: number of blobs
             avg_blob_size: avg diameter (fraction of min(H,W) or pixels)
@@ -969,6 +995,8 @@ class HighlightRender(nn.Module):
                 'pcloud': [B,3,H,W]
                 'light_dir': [B,3,H,W]
                 'view_dir': [B,3,H,W]
+                'surface_roughness': float or [B] tensor, resolved value(s) used for specular exponent
+                'intensity': float or [B] tensor, resolved value(s) used for specular strength
         """
         # Ensure tensors are on GPU
         device = rgb.device
@@ -978,6 +1006,14 @@ class HighlightRender(nn.Module):
 
         B, C, H, W = rgb.shape
 
+        # Resolve highlight params: scalar or [min, max] -> per-sample tensor or scalar (sampling done here)
+        surface_roughness = _resolve_highlight_param(
+            surface_roughness, B, device, log_uniform=True
+        )
+        intensity = _resolve_highlight_param(
+            intensity, B, device, log_uniform=False
+        )
+        
         # If intensity is scalar zero, skip all highlight and geometry computations (tensor => never skip)
         if not torch.is_tensor(intensity) and intensity == 0:
 
@@ -1006,6 +1042,8 @@ class HighlightRender(nn.Module):
                 "stokes_highlighted": zeros_1hw(3) if pol is not None else None,
                 "supervision_mask": torch.ones_like(zeros_1hw(1)),
                 "pixel_supervision_mask": torch.ones_like(zeros_1hw(1)),
+                "surface_roughness": surface_roughness,
+                "intensity": intensity,
             }
             if (
                 return_dataset_highlights
@@ -1054,6 +1092,10 @@ class HighlightRender(nn.Module):
         # 3) Synthesize highlights and update Stokes parameters
         # Use dummy pol if not provided for the synthesis function
         pol_input = pol if pol is not None else torch.zeros_like(rgb)
+        
+        # Light position gets rescaled in relation to the average depth
+        light_pos_rescaled = light_pos * depth.mean()
+        
         H, H_stokes, H_aop, H_dop, light_pos_random, pcloud, light_dir, view_dir = (
             self.synthesize_highlight_with_stokes(
                 rgb,
@@ -1061,7 +1103,7 @@ class HighlightRender(nn.Module):
                 depth,
                 normals,
                 intrinsic,
-                light_pos=light_pos,
+                light_pos=light_pos_rescaled,
                 surface_roughness=surface_roughness,
                 intensity=intensity,
             )
@@ -1083,6 +1125,8 @@ class HighlightRender(nn.Module):
             "pcloud": pcloud,
             "light_dir": light_dir,
             "view_dir": view_dir,
+            "surface_roughness": surface_roughness,
+            "intensity": intensity,
         }
 
         # Dataset Highlights are thresholded here

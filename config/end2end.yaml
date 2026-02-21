@@ -49,7 +49,7 @@ parameters:
         USE_POSITIONAL_ENCODING: True  # Enable 2D sinusoidal positional encodings
         USE_FINAL_NORM: True  # Enable final LayerNorm before output projection
         USE_LOCAL_PRIOR: True  # Blend local mean prior for masked seeds
-        LOCAL_PRIOR_WEIGHT: 0.2  # Weight for local prior blending (1.0 = only mask_token, 0.0 = only local mean)
+        LOCAL_PRIOR_WEIGHT: 1000  # Weight for local prior blending (1.0 = only mask_token, 0.0 = only local mean)
         LOCAL_PRIOR_KERNEL: 5  # Kernel size for local prior blending (> 1)
         SEED_NOISE_STD: 0.02  # Standard deviation of noise added to masked seeds during training  
 
@@ -135,7 +135,7 @@ parameters:
         LOAD_RGB_ONLY: True        
 
   BATCH_SIZE: # Max batch size with img size 896 is 32
-    value: 4    # Number of samples per batch (adjust based on GPU memory)
+    value: 1    # Number of samples per batch (adjust based on GPU memory)
   NUM_WORKERS:
     value: 12  # Number of data loading worker processes (0 = main process only, "auto" = 90% of CPU affinity)
   SHUFFLE:
@@ -185,7 +185,7 @@ parameters:
   LR_SCHEDULER: 
     value: 
       ONPLATEAU:  # ReduceLROnPlateau scheduler (reduces LR when validation metric plateaus)
-        PATIENCE: 5  # Number of epochs to wait before reducing LR
+        PATIENCE: 5  # Number ofd epochs to wait before reducing LR
         FACTOR: 0.1  # Factor by which LR is reduced (new_lr = old_lr * factor)
       COSINE:  # CosineAnnealingLR scheduler (cosine annealing schedule)
         N_PERIODS: 0.5  # Number of cosine periods over training

@@ -653,10 +653,12 @@ def load_and_process_config(
     else:
         config_dict = config
 
-    # Process the unknown command-line arguments
+    # Process the unknown command-line arguments (supports --KEY=value and --KEY value)
     if unknown_args:
         additional_args = {}
-        for arg in unknown_args:
+        i = 0
+        while i < len(unknown_args):
+            arg = unknown_args[i]
             if arg.startswith("--"):
                 key_value = arg.lstrip("--").split("=", 1)
                 if len(key_value) == 2:
@@ -664,7 +666,13 @@ def load_and_process_config(
                     additional_args[key.upper()] = value
                 else:
                     key = key_value[0]
-                    additional_args[key.upper()] = None
+                    # Space-separated value: next arg is the value if it doesn't look like a flag
+                    if i + 1 < len(unknown_args) and not unknown_args[i + 1].startswith("--"):
+                        additional_args[key.upper()] = unknown_args[i + 1]
+                        i += 1  # consume next
+                    else:
+                        additional_args[key.upper()] = None
+            i += 1
 
         # Override parameters in the configuration with command-line arguments
         for key, value in additional_args.items():
@@ -672,7 +680,9 @@ def load_and_process_config(
                 orig_value = config_dict[key]
                 orig_type = type(orig_value)
                 try:
-                    if orig_type is bool:
+                    if value is None:
+                        new_value = "" if orig_type is str else value
+                    elif orig_type is bool:
                         if value.lower() in ("true", "1", "yes"):
                             new_value = True
                         elif value.lower() in ("false", "0", "no"):

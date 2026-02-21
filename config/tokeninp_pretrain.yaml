@@ -36,7 +36,7 @@ parameters:
           DROPOUT: 0.1  # Dropout rate in decoder layers
           OUTPUT_IMAGE_SIZE: [896,896]  # Output image resolution [height, width]
           OUTPUT_CHANNELS: 1  # Number of output channels (1 for highlight mask)
-          DECODER_LR: 5.0e-4  # Custom learning rate for decoder (0.0 = frozen, 1.0 = same as base LR)
+          DECODER_LR: 0.0  # Custom learning rate for decoder (0.0 = frozen, 1.0 = same as base LR)
           NUM_FUSION_BLOCKS_TRAINABLE: null  # Number of fusion blocks to train (0-4, null = train all if DECODER_LR != 0)
       TOKEN_INPAINTER:
         TOKEN_INPAINTER_CLASS: "TokenInpainter_Prior"  # Token inpainter class name
@@ -49,7 +49,7 @@ parameters:
         USE_POSITIONAL_ENCODING: True  # Enable 2D sinusoidal positional encodings
         USE_FINAL_NORM: True  # Enable final LayerNorm before output projection
         USE_LOCAL_PRIOR: True  # Blend local mean prior for masked seeds
-        LOCAL_PRIOR_WEIGHT: 0.25  # Weight for local prior blending (1.0 = only mask_token, 0.0 = only local mean)
+        LOCAL_PRIOR_WEIGHT: 0.75  # Weight for local prior blending (1.0 = only mask_token, 0.0 = only local mean)
         LOCAL_PRIOR_KERNEL: 5  # Kernel size for local prior blending (> 1)
         SEED_NOISE_STD: 0.02  # Standard deviation of noise added to masked seeds during training  
 
@@ -57,7 +57,7 @@ parameters:
   INPAINT_MASK_THRESHOLD: 
     value: 0.2  # Threshold for inpaint mask
   INPAINT_MASK_DILATION: 
-    value: -1 # Dilation kernel size (pixels) for inpaint mask - Must be odd
+    value: 30 # Dilation kernel size (pixels) for inpaint mask - Must be odd
 
 
   USE_TORCH_COMPILE:  # Enable PyTorch 2.0 torch.compile for faster training (experimental)
@@ -112,31 +112,28 @@ parameters:
         RESIZE_MODE: "resize+crop"  # Image resizing mode
         SAMPLE_EVERY_N: 4  # Load every Nth frame
 
-      # SCANNET:
-      #   TRAIN_SCENES: ["train"]
-      #   VAL_SCENES: ["val"]
-      #   RESIZE_MODE: "resize+crop"
-      #   SAMPLE_EVERY_N: 5
+      SCANNET:
+        TRAIN_SCENES: ["train"]
+        VAL_SCENES: ["val"]
+        RESIZE_MODE: "resize+crop"
+        SAMPLE_EVERY_N: 5
 
-      # OPENIMAGESV7:
-      #   TRAIN_SCENES: ["thescene"]
-      #   # VAL_SCENES: [""]
-      #   RESIZE_MODE: "resize+crop"
-      #   SAMPLE_EVERY_N: 5
+      OPENIMAGESV7:
+        TRAIN_SCENES: ["thescene"]
+        # VAL_SCENES: [""]
+        RESIZE_MODE: "resize+crop"
+        SAMPLE_EVERY_N: 5
       
-      # ENDOSYNTH:
-      #   TRAIN_SCENES: ["scene"]
-      #   # VAL_SCENES: ["val"]
-      #   RESIZE_MODE: "resize+crop"
-      #   SAMPLE_EVERY_N: 1
+      ENDOSYNTH:
+        TRAIN_SCENES: ["scene"]
+        # VAL_SCENES: ["val"]
+        RESIZE_MODE: "resize+crop"
+        SAMPLE_EVERY_N: 1
 
       ALL_DATASETS:
         FEW_IMAGES: False   # Override FEW_IMAGES for all datasets (for quick debugging set True)
         TARGET_SIZE: [896,896]  # Override target image size [height, width] for all datasets
         LOAD_RGB_ONLY: True        
-
-  FEW_IMAGES_ALL_DATASETS:
-    value: False  # If True, override all datasets' FEW_IMAGES to True (for quick debugging across all datasets)
 
   BATCH_SIZE: # Max batch size with img size 896 is 32
     value: 8 # Number of samples per batch (adjust based on GPU memory)
@@ -153,14 +150,14 @@ parameters:
   MOGE_MODEL:
     value: "Ruicheng/moge-2-vits-normal"  # MoGe model name for normal estimation (HuggingFace format)
   SURFACE_ROUGHNESS:
-    value: 100.0  # Blinn-Phong surface roughness exponent (higher = sharper highlights)
+    value: [100.0, 2000.0]  # Blinn-Phong surface roughness exponent (higher = sharper highlights)
   INTENSITY:
-    value: 0.8  # Specular highlight intensity multiplier
+    value: [0.5, 1.0]  # Specular highlight intensity multiplier
   LIGHT_DISTANCE_RANGE:
-    value: [0.0, 1]  # Range for light source distance sampling [min, max] (normalized)
-  LIGHT_LEFT_RIGHT_ANGLE:
-    value: [0, 360]  # Range for light source horizontal angle [min, max] in degrees
+    value: [0.1, 2]  # Range for light source distance sampling [min, max] (normalized)
   LIGHT_ABOVE_BELOW_ANGLE:
+    value: [0, 360]  # Range for light source vertical angle [min, max] in degrees
+  LIGHT_LEFT_RIGHT_ANGLE:
     value: [0, 360]  # Range for light source vertical angle [min, max] in degrees
   DATASET_HIGHLIGHT_DILATION:
     value: 25  # Dilation kernel size (pixels) for dataset highlight masks
@@ -179,7 +176,7 @@ parameters:
   WEIGHT_DECAY:   
     value: 0.0  # L2 regularization weight (0.0 = no weight decay)
   EPOCHS:
-    value: 20  # Maximum number of training epochs
+    value: 10  # Maximum number of training epochs
   GRADIENT_ACCUMULATION_STEPS:
     value: 1  # Number of steps to accumulate gradients before optimizer step (1 = no accumulation)
   WARMUP:
@@ -189,22 +186,19 @@ parameters:
   LR_SCHEDULER: 
     value: 
       ONPLATEAU:  # ReduceLROnPlateau scheduler (reduces LR when validation metric plateaus)
-        PATIENCE: 5  # Number of epochs to wait before reducing LR
+        PATIENCE: 5  # Number ofd epochs to wait before reducing LR
         FACTOR: 0.1  # Factor by which LR is reduced (new_lr = old_lr * factor)
-      # COSINE:  # CosineAnnealingLR scheduler (cosine annealing schedule)
-      #   N_PERIODS: 5  # Number of cosine periods over training
-      STEPWISE:  # StepLR scheduler (reduces LR at fixed step intervals)
-        N_STEPS: 4  # Number of times to reduce LR during training
-        GAMMA: 0.5  # Factor by which LR is reduced at each step (new_lr = old_lr * gamma)
+      COSINE:  # CosineAnnealingLR scheduler (cosine annealing schedule)
+        N_PERIODS: 0.5  # Number of cosine periods over training
+      # STEPWISE:  # StepLR scheduler (reduces LR at fixed step intervals)
+      #   N_STEPS: 4  # Number of times to reduce LR during training
+      #   GAMMA: 0.5  # Factor by which LR is reduced at each step (new_lr = old_lr * gamma)
       # EXPONENTIAL:  # ExponentialLR scheduler (exponential decay)
       #   GAMMA: 0.5  # Multiplicative factor for exponential decay
 
-  SWITCH_OPTIMIZER_EPOCH:
-    value: null  # Epoch number to switch from bootstrap to refining optimizer (null = no switch)
+
   OPTIMIZER_BOOTSTRAP_NAME:
     value: "AdamW"  # Optimizer name for initial training phase ("Adam", "SGD", etc.)
-  OPTIMIZER_REFINING_NAME:
-    value: "AdamW"  # Optimizer name for refining phase (used after SWITCH_OPTIMIZER_EPOCH)
   EARLY_STOPPING_PATIENCE:
     value: 10  # Number of epochs without improvement before stopping training
   SAVE_INTERVAL:
@@ -219,25 +213,12 @@ parameters:
   DIFFUSE_LOSS_WEIGHT:
     value: 0.0  # Weight for diffuse component reconstruction loss
   HIGHLIGHT_LOSS_WEIGHT:
-    value: 1.0  # Weight for highlight mask regression loss
+    value: 0.0  # Weight for highlight mask regression loss
   TOKEN_INPAINT_LOSS_WEIGHT:
     value: 1.0  # Weight for token-space inpainting loss (L1 + cosine similarity in feature space)
-
   IMAGE_RECONSTRUCTION_LOSS_WEIGHT:
     value: 0.0  # Weight for full image reconstruction loss
-  SATURATION_RING_LOSS_WEIGHT:
-    value: 0.0  # Weight for saturation ring consistency loss (around highlight regions)
-  WEIGHT_CONTEXT_IDENTITY: 
-    value: 0.0  # LEAVE TO 0.0: Weight for L1 loss on context (non-masked) regions (identity preservation) 
-  WEIGHT_TV_IN_HOLE:
-    value: 0.0  # LEAVE TO 0.0: Weight for total variation loss inside masked/hole regions
 
-  RING_KERNEL_SIZE:
-    value: 11  # Kernel size (odd number) for saturation ring dilation around highlights
-  RING_VAR_WEIGHT:
-    value: 0.5  # Weight for variance matching in saturation ring loss (vs mean matching)
-  RING_TEXTURE_WEIGHT:
-    value: 1.0  # Weight for texture consistency term in saturation ring loss
   HLREG_W_L1:
     value: 1.0  # Weight for L1 loss in highlight regression
   HLREG_USE_CHARB:
@@ -256,12 +237,11 @@ parameters:
     value: 1.0      # Positive class weight (used only if BALANCE_MODE == 'pos_weight')
   HLREG_FOCAL_GAMMA:
     value: 2.0      # Focal loss gamma parameter (0.0 = standard BCE, 1.0-2.0 helps with gradient vanishing)
-  
 
-  RING_DILATE_KERNEL:
-    value: 17  # Dilation kernel size (odd number) for creating ring mask around highlights
   WEIGHT_SEAM:
     value: 0.5  # Weight for gradient matching loss on saturation ring
+  RING_DILATE_KERNEL:
+    value: 17  # Dilation kernel size (odd number) for creating ring mask around highlights
   SEAM_USE_CHARB:
     value: True  # Use Charbonnier loss instead of L1 in seam loss (smooth L1 for boundary consistency)
   SEAM_WEIGHT_GRAD:
@@ -271,7 +251,7 @@ parameters:
 
   ### DIFFUSE HIGHLIGHT PENALTY
   WEIGHT_DIFFUSE_HIGHLIGHT_PENALTY:
-    value: 0.1  # Weight for penalty loss on highlights in diffuse decoder output (0.0 = disabled)
+    value: 0.02  # Weight for penalty loss on highlights in diffuse decoder output (0.0 = disabled)
   DIFFUSE_HL_THRESHOLD:
     value: 0.85  # Brightness/luminance threshold for detecting highlights in diffuse (0.0-1.0)
   DIFFUSE_HL_USE_CHARB:

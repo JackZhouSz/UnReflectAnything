@@ -7,10 +7,71 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from transformers import AutoImageProcessor, AutoModel
-from utilities.model import pixel_mask_to_patch_mask, feather_token_mask, _build
-from logger import get_logger
 
-logger = get_logger(__name__).set_context("MODEL")
+# Optional logging: only imports logger when a log is emitted (avoids pulling in
+# dev pipeline when using endpoints/model_.py for inference-only).
+def _log_info(msg: str, context: str = "MODEL") -> None:
+    try:
+        from logger import get_logger
+        get_logger(__name__).set_context(context).info(msg)
+    except ImportError:
+        pass
+
+def _log_warning(msg: str, context: str = "MODEL") -> None:
+    try:
+        from logger import get_logger
+        get_logger(__name__).set_context(context).warning(msg)
+    except ImportError:
+        pass
+
+def _build(component, cls):
+    """Build component from instance or config dict (no dependency on utilities.model)."""
+    if isinstance(component, cls):
+        return component
+    if isinstance(component, dict):
+        return cls(component)
+    raise TypeError(f"Expected {cls.__name__} instance or dict config, got {type(component)}.")
+
+def pixel_mask_to_patch_mask(
+    mask_hw: torch.Tensor,
+    patch_size: int,
+    threshold: float = 0.0,
+    invert: bool = False,
+    soft: bool = False,
+) -> torch.Tensor:
+    """Convert pixel mask (B,1,H,W) to patch mask (B,N). Uses only torch."""
+    if mask_hw.dtype == torch.bool:
+        m = mask_hw.float()
+    else:
+        m = (mask_hw > threshold).float()
+    if soft:
+        m_small = F.avg_pool2d(m, kernel_size=patch_size, stride=patch_size)
+        pm = m_small.flatten(1)
+    else:
+        m_small = F.max_pool2d(m, kernel_size=patch_size, stride=patch_size)
+        pm = m_small.flatten(1).bool()
+    if invert:
+        if soft:
+            pm = 1.0 - pm
+        else:
+            pm = torch.logical_not(pm)
+    return pm
+
+def feather_token_mask(pm_soft: torch.Tensor, radius_tokens: int = 1, smoothstep: bool = True) -> torch.Tensor:
+    """Feather token mask (B,N) over the token grid. Uses only torch."""
+    B, N = pm_soft.shape
+    H = int(round(N**0.5))
+    assert H * H == N, "N must be a perfect square (flattened token grid)."
+    m = pm_soft.view(B, 1, H, H)
+    k = 2 * radius_tokens + 1
+    pad = radius_tokens
+    kernel = torch.ones(1, 1, k, k, device=m.device, dtype=m.dtype) / (k * k)
+    m_blur = F.conv2d(m, kernel, padding=pad)
+    inv_blur = F.conv2d(1.0 - m, kernel, padding=pad)
+    out = m_blur / (m_blur + inv_blur + 1e-6)
+    if smoothstep:
+        out = out * out * (3.0 - 2.0 * out)
+    return out.clamp_(0, 1).view(B, N)
 
 
 class DINOv3(nn.Module):
@@ -633,12 +694,12 @@ class UnReflect_Model(nn.Module):
                 param.requires_grad = False
             self.dinov3.eval()
             if kwargs.get("verbose", False):
-                logger.info("RGB Encoder frozen due to RGB_ENCODER_LR=0.0")
+                _log_info("RGB Encoder frozen due to RGB_ENCODER_LR=0.0")
         else:
             # Ensure encoder is trainable if LR is set (or None, which will be handled in optimizer)
             self.dinov3.train()
             if encoder_lr is not None and kwargs.get("verbose", False):
-                logger.info(f"RGB Encoder trainable with RGB_ENCODER_LR={encoder_lr}")
+                _log_info(f"RGB Encoder trainable with RGB_ENCODER_LR={encoder_lr}")
 
         # Store encoder learning rate for optimizer setup
         self.encoder_lr = encoder_lr
@@ -689,7 +750,7 @@ class UnReflect_Model(nn.Module):
                         else:
                             convnext_feature_dims = all_feature_dims
                     # if convnext_feature_dims:
-                    #     logger.info(
+                    #     _log_info(
                     #         f"ConvNeXt feature dimensions: {convnext_feature_dims}"
                     #     )
 
@@ -877,27 +938,27 @@ class UnReflect_Model(nn.Module):
 
                     if not has_issues and loaded_keys == total_model_keys:
                         if kwargs.get("verbose", False):
-                            logger.info(
+                            _log_info(
                                 f"✓ Decoder '{decoder_name}': Successfully loaded all {loaded_keys} state dict keys from {pretrained_path}"
                             )
                     else:
                         if kwargs.get("verbose", False):
-                            logger.info(
+                            _log_info(
                                 f"⚠ Decoder '{decoder_name}': Loaded {loaded_keys}/{total_model_keys} state dict keys from {pretrained_path}"
                             )
                         if incompatible_keys:
                             if kwargs.get("verbose", False):
-                                logger.info(
+                                _log_info(
                                     f"  - {len(incompatible_keys)} keys had incompatible shapes and were skipped"
                                 )
                         if missing_keys:
                             if kwargs.get("verbose", False):
-                                logger.info(
+                                _log_info(
                                     f"  - {len(missing_keys)} keys were missing from checkpoint"
                                 )
                         if unexpected_keys:
                             if kwargs.get("verbose", False):
-                                logger.info(
+                                _log_info(
                                     f"  - {len(unexpected_keys)} unexpected keys in checkpoint"
                                 )
 
@@ -928,7 +989,7 @@ class UnReflect_Model(nn.Module):
                         param.requires_grad = False
                     # Don't set to eval mode yet - we may selectively unfreeze below
                     if kwargs.get("verbose", False):
-                        logger.info(
+                        _log_info(
                             f"Loaded pre-trained decoder weights from {pretrained_path}"
                         )
 
@@ -939,7 +1000,7 @@ class UnReflect_Model(nn.Module):
                         param.requires_grad = False
                     decoder.eval()
                     if kwargs.get("verbose", False):
-                        logger.info(
+                        _log_info(
                             f"Decoder '{decoder_name}' frozen due to DECODER_LR=0.0"
                         )
                 else:
@@ -981,7 +1042,7 @@ class UnReflect_Model(nn.Module):
                                 for param in decoder.fusion_blocks[i].parameters():
                                     param.requires_grad = True
                             if kwargs.get("verbose", False):
-                                logger.info(
+                                _log_info(
                                     f"Decoder '{decoder_name}': Training {num_fusion_blocks_trainable} "
                                     f"fusion blocks (indices {start_idx} to {num_blocks - 1})"
                                 )
@@ -1014,7 +1075,7 @@ class UnReflect_Model(nn.Module):
                                 for param in rgb_head_module.parameters():
                                     param.requires_grad = train_rgb_head
                             if kwargs.get("verbose", False):
-                                logger.info(
+                                _log_info(
                                     f"Decoder '{decoder_name}': RGB head trainable = {train_rgb_head}"
                                 )
                         else:
@@ -1034,7 +1095,7 @@ class UnReflect_Model(nn.Module):
 
                         decoder.train()
                         if kwargs.get("verbose", False):
-                            logger.info(
+                            _log_info(
                                 f"Decoder '{decoder_name}' selectively frozen/unfrozen"
                             )
                     else:
@@ -1042,7 +1103,7 @@ class UnReflect_Model(nn.Module):
                         for param in decoder.parameters():
                             param.requires_grad = True
                         decoder.train()
-                        # logger.info(
+                        # _log_info(
                         #     f"Decoder '{decoder_name}' un-frozen due to DECODER_LR={decoder_lr}"
                         # )
                 # Store decoder_lr for optimizer setup (will be None if not specified)
@@ -1099,7 +1160,7 @@ class UnReflect_Model(nn.Module):
             if len(tokens_list[0].shape) == 3:
                 # It's tokens [B, N, C], but ConvNext decoder expects spatial
                 # This shouldn't happen if config is correct, but handle gracefully
-                logger.warning(
+                _log_warning(
                     "ConvNeXt encoder returned tokens but decoder expects spatial maps. "
                     "Set return_as_feature_maps=True in encoder config."
                 )
@@ -1273,27 +1334,27 @@ class UnReflect_Model_TokenInpainter(UnReflect_Model):
 
             if not has_issues and loaded_keys == total_model_keys:
                 if kwargs.get("verbose", False):
-                    logger.info(
+                    _log_info(
                         f"✓ Token Inpainter: Successfully loaded all {loaded_keys} state dict keys from {pretrained_path}"
                     )
             else:
                 if kwargs.get("verbose", False):
-                    logger.info(
+                    _log_info(
                         f"⚠ Token Inpainter: Loaded {loaded_keys}/{total_model_keys} state dict keys from {pretrained_path}"
                     )
                 if incompatible_keys:
                     if kwargs.get("verbose", False):
-                        logger.info(
+                        _log_info(
                             f"  - {len(incompatible_keys)} keys had incompatible shapes and were skipped"
                         )
                 if missing_keys:
                     if kwargs.get("verbose", False):
-                        logger.info(
+                        _log_info(
                             f"  - {len(missing_keys)} keys were missing from checkpoint"
                         )
                 if unexpected_keys:
                     if kwargs.get("verbose", False):
-                        logger.info(
+                        _log_info(
                             f"  - {len(unexpected_keys)} unexpected keys in checkpoint"
                         )
 
@@ -1314,7 +1375,7 @@ class UnReflect_Model_TokenInpainter(UnReflect_Model):
 
             if missing_keys:
                 if kwargs.get("verbose", False):
-                    logger.warning(
+                    _log_warning(
                         f"Missing keys when loading pretrained token inpainter from {pretrained_path}: {missing_keys[:5]}"
                         + (
                             f" (and {len(missing_keys) - 5} more)"
@@ -1325,7 +1386,7 @@ class UnReflect_Model_TokenInpainter(UnReflect_Model):
 
             if unexpected_keys:
                 if kwargs.get("verbose", False):
-                    logger.warning(
+                    _log_warning(
                         f"Unexpected keys when loading pretrained token inpainter from {pretrained_path}: {unexpected_keys[:5]}"
                         + (
                             f" (and {len(unexpected_keys) - 5} more)"
@@ -1335,7 +1396,7 @@ class UnReflect_Model_TokenInpainter(UnReflect_Model):
                     )
 
             if kwargs.get("verbose", False):
-                logger.info(
+                _log_info(
                     f"Loaded pretrained token inpainter weights from {pretrained_path}"
                 )
 

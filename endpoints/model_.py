@@ -127,9 +127,9 @@ class UnReflectModel(_nn_module_base()):
         """
         super().__init__()
         import torch
-        from ._shared import _resolve_device
-        from utilities.config import create_model_from_config
         import importlib
+        from ._shared import _resolve_device
+        from ._model_builder import load_config_minimal, create_model_from_config_minimal
         # ── 1. Resolve target device ──────────────────────────────────
         torch_device = torch.device(_resolve_device(device))
 
@@ -139,8 +139,8 @@ class UnReflectModel(_nn_module_base()):
             pkg = importlib.resources.files("unreflectanything")
             config_path = pkg / "assets" / "pretrained_config.yaml"
         model_config = self._resolve_config(config, config_path, verbose)
-        # ── 3. Build model architecture from config ───────────────────
-        inner = create_model_from_config(model_config, torch_device, verbose=verbose)
+        # ── 3. Build model architecture from config (no utilities/engine imports) ─
+        inner = create_model_from_config_minimal(model_config, torch_device, verbose=verbose)
         # ── 4. Load pretrained weights (skipped when pretrained=False) ─
         if pretrained:
             sd = self._resolve_and_load_weights(
@@ -172,22 +172,14 @@ class UnReflectModel(_nn_module_base()):
 
     @staticmethod
     def _resolve_config(config, config_path, verbose):
-        """Return a parsed DotMap config.
+        """Return a parsed DotMap config (minimal loader; no utilities import)."""
 
-        Resolution order:
-            1. ``config`` (dict / DotMap)         → parsed directly.
-            2. ``config_path`` (YAML path / dir)   → loaded from disk.
-            3. Default cached config path.
-        """
         from ._shared import DEFAULT_CONFIG_FILENAME, get_cache_dir
-        from utilities.config import (
-            load_and_process_config,
-            load_config_from_path_or_dict,
-        )
+        from ._model_builder import load_config_minimal
 
         # --- In-memory config takes priority ---
         if config is not None:
-            parsed = load_config_from_path_or_dict(config)
+            parsed = load_config_minimal(config=config)
             if parsed is None:
                 raise ValueError(
                     "config could not be parsed (expected dict or DotMap)."
@@ -200,11 +192,10 @@ class UnReflectModel(_nn_module_base()):
         if config_path is None:
             config_path = get_cache_dir("configs") / DEFAULT_CONFIG_FILENAME
         config_path = Path(config_path)
-        # If the caller passed a directory, look for the canonical filename inside
         if config_path.is_dir():
             config_path = config_path / DEFAULT_CONFIG_FILENAME
 
-        parsed = load_and_process_config(str(config_path))
+        parsed = load_config_minimal(config_path=config_path)
         if verbose:
             print(f"Loaded model configuration from: `{config_path}`")
         return parsed

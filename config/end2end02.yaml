@@ -249,7 +249,7 @@ parameters:
 
   ### DIFFUSE HIGHLIGHT PENALTY
   WEIGHT_DIFFUSE_HIGHLIGHT_PENALTY:
-    value: 0.75 # Weight for penalty loss on highlights in diffuse decoder output (0.0 = disabled)
+    value: 0.0 # Weight for penalty loss on highlights in diffuse decoder output (0.0 = disabled)
   DIFFUSE_HL_THRESHOLD:
     value: 0.8  # Brightness/luminance threshold for detecting highlights in diffuse (0.0-1.0)
   DIFFUSE_HL_USE_CHARB:

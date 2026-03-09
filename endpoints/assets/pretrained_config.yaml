@@ -8,7 +8,7 @@ parameters:
       MODEL_CLASS: "UnReflect_Model_TokenInpainter"  # Main model class name (must match class in models.py)
       MODEL_MODULE: "models"  # Module name to import model classes from (default: "models")
       RGB_ENCODER:
-        ENCODER: "facebook/dinov3-vitl16-pretrain-lvd1689m"  # DINOv3 encoder model name (HuggingFace format)
+        ENCODER: "AlbeRota/DINOv3_mirror"  # DINOv3 encoder model name (HuggingFace format)
         IMAGE_SIZE: 896  # Input image size (height and width in pixels)
         RETURN_SELECTED_LAYERS: [3, 6, 9, 12]  # Transformer layer indices to extract features from (0-indexed)
         RGB_ENCODER_LR: 0.0  # Learning rate for RGB encoder (0.0 = frozen, must be explicitly set)

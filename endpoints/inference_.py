@@ -88,6 +88,7 @@ def inference(
     verbose: bool = False,
     model: Optional[Any] = None,
     show_progress: bool = False,
+    composite: bool = False,
 ) -> Optional[torch.Tensor]:
     """Run inference on input image(s) to remove specular reflections.
 
@@ -143,6 +144,7 @@ def inference(
             threshold=threshold,
             dilation=dilation,
             verbose=verbose,
+            composite=composite,
         )
 
     input_path = Path(input).expanduser().resolve()
@@ -165,6 +167,7 @@ def inference(
                 dilation=dilation,
                 resize_output=resize_output,
                 verbose=verbose,
+                composite=composite,
             )
     else:
         output_path = Path(output).expanduser().resolve()
@@ -189,6 +192,7 @@ def inference(
             resize_output=resize_output,
             verbose=verbose,
             show_progress=show_progress,
+            composite=composite,
         )
         return None
 
@@ -207,6 +211,7 @@ def _inference_tensor(
     threshold: float = 0.3,
     dilation: int = 40,
     verbose: bool = False,
+    composite: bool = False,
 ) -> torch.Tensor:
     """Run inference on a ``[B, 3, H, W]`` tensor, return ``[B, 3, H, W]`` diffuse."""
     if input_tensor.dim() != 4:
@@ -228,6 +233,7 @@ def _inference_tensor(
             images=input_tensor,
             threshold=threshold,
             dilation=dilation,
+            composite=composite,
         )  # [B, 3, H, W]
     return diffuse
 
@@ -244,6 +250,7 @@ def _inference_files_return_tensors(
     dilation: int = 40,
     resize_output: bool = True,
     verbose: bool = False,
+    composite: bool = False,
 ) -> torch.Tensor:
     """Load images from disk, run model forward, return stacked tensor."""
     from PIL import Image
@@ -288,6 +295,7 @@ def _inference_files_return_tensors(
                 images=rgb_batch,
                 threshold=threshold,
                 dilation=dilation,
+                composite=composite,
             )  # [B, 3, H, W]
         results.append(diffuse.cpu())
 
@@ -304,6 +312,7 @@ def _inference_files_save(
     resize_output: bool = True,
     verbose: bool = False,
     show_progress: bool = False,
+    composite: bool = False,
 ) -> None:
     """Run model forward on image files and save results to disk."""
     from PIL import Image
@@ -364,6 +373,7 @@ def _inference_files_save(
                 images=rgb_batch,
                 threshold=threshold,
                 dilation=dilation,
+                composite=composite,
             )  # [B, 3, H, W]
 
         if output_is_single_file and len(batch_paths) == 1:
@@ -515,6 +525,11 @@ def parse_cli():
     if num_workers < 0:
         raise ValueError("num_workers must be non-negative")
 
+    raw_composite = raw_options.get("composite", raw_options.get("COMPOSITE_AT_INFERENCE", False))
+    if isinstance(raw_composite, dict):
+        raw_composite = raw_composite.get("value", False)
+    composite = bool(raw_composite)
+
     options = InferenceOptions(
         weights_path=weights_path,
         input_dir=input_dir,
@@ -531,5 +546,6 @@ def parse_cli():
         brightness_threshold=brightness_threshold,
         monitor_usage=monitor_usage,
         num_workers=num_workers,
+        composite=composite,
     )
     return options

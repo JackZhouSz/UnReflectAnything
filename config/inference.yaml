@@ -16,6 +16,7 @@ resize_output: True
 brightness_threshold: 0.8
 inpaint_mask_dilation: 11
 monitor_usage: True
+composite: False  # If True, blend predicted diffuse with input RGB outside the highlight mask
 
 # serene-terrain-817   :  SoftTHR ablation - Rebuttal
 # smooth-vortex-816    :  Dice ablation - Rebuttal

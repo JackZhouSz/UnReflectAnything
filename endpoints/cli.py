@@ -120,6 +120,7 @@ def _run_inference(args: argparse.Namespace) -> None:
         resize_output=not args.no_resize,
         verbose=args.verbose,
         show_progress=True,
+        composite=args.composite,
     )
 
 
@@ -590,6 +591,12 @@ Examples:
         "--no-resize",
         action="store_true",
         help="Don't resize output to match original input dimensions",
+    )
+    p_inf.add_argument(
+        "--composite",
+        action="store_true",
+        help="Blend predicted diffuse with input RGB outside the highlight mask "
+        "(pixel-perfect identity in non-mask regions)",
     )
     p_inf.add_argument(
         "-v",

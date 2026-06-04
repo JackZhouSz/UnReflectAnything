@@ -1198,10 +1198,14 @@ class UnReflect_Model_TokenInpainter(UnReflect_Model):
         decoders,
         patch_size: int = 16,
         token_inpainter_cfg: dict | None = None,
+        detach_inpainted_tokens_for_decoder: bool = True,
         **kwargs,
     ):
         super().__init__(
             dinov3=dinov3, decoders=decoders, patch_size=patch_size, **kwargs
+        )
+        self.detach_inpainted_tokens_for_decoder = bool(
+            detach_inpainted_tokens_for_decoder
         )
         dim = self.embed_dim
         # Extract TokenInpainter class and module from config
@@ -1283,6 +1287,8 @@ class UnReflect_Model_TokenInpainter(UnReflect_Model):
                 if "." in sample_key:
                     # Try to find token inpainter-specific prefix pattern
                     prefix_options = [
+                        "module.token_inpaint.",
+                        "module.token_inpainter.",
                         "token_inpaint.",
                         "token_inpainter.",
                     ]
@@ -1498,15 +1504,8 @@ class UnReflect_Model_TokenInpainter(UnReflect_Model):
         completed_tokens = []  # With gradients - for token loss
         completed_tokens_detached = []  # Detached - for decoders (prevents decoder loss from affecting TokenInpainter)
         for n, T in enumerate(tokens_list):  # (B,N,C)
-            # Prepare visibility mask for token inpainter
-
-            #### THIS WAS WRONG TokenInpainter expects: True/1.0 = visible/teacher, False/0.0 = masked/inpaint
-            if is_soft_mask:
-                visibility_mask = 1.0 - patch_inpaint_mask  # [B, N] float in [0,1]
-            else:
-                visibility_mask = torch.logical_not(patch_inpaint_mask)  # [B, N] bool
-
-            T_inpainted = self.token_inpaint(T, visibility_mask)
+            # TokenInpainter contract: True/1.0 = hole, False/0.0 = visible.
+            T_inpainted = self.token_inpaint(T, patch_inpaint_mask)
 
             # Blend: keep teacher tokens on context; use predicted tokens on masked patches
             if is_soft_mask:
@@ -1534,10 +1533,17 @@ class UnReflect_Model_TokenInpainter(UnReflect_Model):
         outputs["tokens_inpainted"] = T_inpainted
         outputs["tokens_input"] = tokens_list
 
-        # 4) Decode with DETACHED completed tokens to prevent decoder loss from affecting TokenInpainter
+        # 4) Decode. By default the inpainter is shielded from decoder gradients
+        # (set DETACH_INPAINTED_TOKENS_FOR_DECODER: False at end2end to let decoder
+        # losses correct token-level residuals visible as colour artifacts).
+        decoder_input_tokens = (
+            completed_tokens_detached
+            if self.detach_inpainted_tokens_for_decoder
+            else completed_tokens
+        )
         for name, dec in self.decoders.items():
             if name == "highlight":
                 continue
-            outputs[name] = dec(completed_tokens_detached)
+            outputs[name] = dec(decoder_input_tokens)
 
         return outputs

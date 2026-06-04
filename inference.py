@@ -83,6 +83,7 @@ class InferenceOptions:
     brightness_threshold: float = 0.7
     monitor_usage: bool = False
     num_workers: int = 4
+    composite: bool = False
 
 
 def run_inference(options: InferenceOptions) -> None:
@@ -211,6 +212,22 @@ def run_inference(options: InferenceOptions) -> None:
             diffuse = outputs.get("diffuse")
             if diffuse is None:
                 raise KeyError("Model output does not contain 'diffuse'")
+            if options.composite:
+                m = outputs.get("highlight_mask")
+                if m is not None:
+                    import torch.nn.functional as F
+
+                    m = F.avg_pool2d(m.float(), kernel_size=5, stride=1, padding=2)
+                    m = m.clamp(0.0, 1.0)
+                    if m.shape[-2:] != diffuse.shape[-2:]:
+                        m = F.interpolate(
+                            m,
+                            size=diffuse.shape[-2:],
+                            mode="bilinear",
+                            align_corners=False,
+                        )
+                    diffuse = diffuse * m + rgb_batch * (1.0 - m)
+                    diffuse = diffuse.clamp(0.0, 1.0)
             save_diffuse_batch(
                 diffuse,
                 batch_paths,

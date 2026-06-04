@@ -297,6 +297,7 @@ class UnReflectModel(_nn_module_base()):
         dilation = 40,
         inpaint_mask_override: Optional["Tensor"] = None,
         return_dict: bool = False,
+        composite: bool = False,
     ) -> Union["Tensor", Dict[str, "Tensor"]]:
         """Run inference on a batch of RGB images.
 
@@ -306,12 +307,16 @@ class UnReflectModel(_nn_module_base()):
                 force specific inpainting regions.
             return_dict: If ``True`` return the full output dict; otherwise
                 return only the diffuse tensor.
+            composite: If ``True``, blend the predicted diffuse with the input
+                RGB at non-mask pixels using the model's predicted highlight
+                mask. Guarantees pixel-perfect identity outside the mask.
 
         Returns:
             ``[B, 3, H, W]`` diffuse tensor (clamped to [0, 1]), or the full
             output dict when ``return_dict=True``.
         """
         import torch
+        import torch.nn.functional as F
 
         # Validate input shape
         if images.dim() != 4 or images.shape[1] != 3:
@@ -320,8 +325,9 @@ class UnReflectModel(_nn_module_base()):
             )
 
         # Build the batch dict expected by the inner model
+        rgb_in = images.to(device=self._device, dtype=torch.float32)  # [B,3,H,W]
         batch = {
-            "rgb": images.to(device=self._device, dtype=torch.float32),  # [B,3,H,W]
+            "rgb": rgb_in,
             "inpaint_mask_threshold": threshold,
             "inpaint_mask_dilation": dilation,
         }
@@ -339,6 +345,18 @@ class UnReflectModel(_nn_module_base()):
         diffuse = out.get("diffuse")  # [B,3,H,W]
         highlight = out.get("highlight")  # [B,1,H,W]
         diffuse = diffuse.clamp(0.0, 1.0)  # [B,3,H,W]
+
+        if composite:
+            m = out.get("highlight_mask")  # [B,1,H,W] dilated pixel mask
+            if m is not None:
+                m = F.avg_pool2d(m.float(), kernel_size=5, stride=1, padding=2)
+                m = m.clamp(0.0, 1.0)
+                if m.shape[-2:] != diffuse.shape[-2:]:
+                    m = F.interpolate(
+                        m, size=diffuse.shape[-2:], mode="bilinear", align_corners=False
+                    )
+                diffuse = diffuse * m + rgb_in * (1.0 - m)
+                diffuse = diffuse.clamp(0.0, 1.0)
 
         if return_dict:
             out["diffuse"] = diffuse

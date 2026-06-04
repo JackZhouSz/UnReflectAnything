@@ -100,7 +100,8 @@ def download(
     for asset_item in asset_list:
         if asset_item == "weights":
             weights_dir = output_path / "weights"
-            download_weights(output_dir=weights_dir, variant=variant, force=force)
+            WEIGHTS_REVISION="a0d3c7bff5ddb2c430e74b5f8ee67be7cc28fcbe"
+            download_weights(output_dir=weights_dir, variant=WEIGHTS_REVISION, force=force)
             asset_dirs["weights"] = weights_dir
         elif asset_item == "images":
             images_dir = output_path / "images"

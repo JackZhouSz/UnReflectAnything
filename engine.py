@@ -1407,6 +1407,85 @@ class Engine:
         """
         return engine_helpers.create_model_from_checkpoint(checkpoint_path, device)
 
+    def _reapply_config_lrs_on_resume(self):
+        """Re-apply per-module learning rates from the CURRENT config after a resume has
+        restored the optimizer + scheduler state.
+
+        On --resume-run the engine restores ``optimizer.load_state_dict`` and the cosine /
+        plateau scheduler states, which silently overrides any LR edits made in the YAML
+        (``DECODER_LR``, ``TOKEN_INPAINTER_LR``, ``RGB_ENCODER_LR``, ``LR_SCHEDULER``). When
+        the config flag ``REAPPLY_LRS_ON_RESUME`` is set, this overwrites the restored
+        per-group LRs with the config values and rebuilds the schedulers from scratch, so the
+        new LRs become the starting point of a fresh anneal over the remaining epochs.
+
+        The optimizer param-group *structure* is never changed (components frozen via LR=0.0
+        must stay frozen), so the preceding ``optimizer.load_state_dict`` still succeeds.
+        """
+        config = self.config
+
+        # Resolve per-component config LRs exactly as initialize.optimizers does.
+        encoder_lr = config.MODEL.RGB_ENCODER.RGB_ENCODER_LR
+        token_lr = config.MODEL.TOKEN_INPAINTER.TOKEN_INPAINTER_LR
+        decoders_config = config.MODEL.DECODERS
+        decoder_lrs = {
+            name: decoders_config[name].DECODER_LR for name in decoders_config.keys()
+        }
+
+        # Unwrap DataParallel / DDP / DataParallelWrapper so names match the real model.
+        from utilities.model import DataParallelWrapper
+
+        effective_model = self.model
+        if isinstance(
+            effective_model,
+            (torch.nn.DataParallel, torch.nn.parallel.DistributedDataParallel),
+        ):
+            effective_model = effective_model.module
+        if isinstance(effective_model, DataParallelWrapper):
+            effective_model = effective_model._modules.get("module", effective_model)
+
+        # Map each parameter tensor (by id) to its config LR via the same bucketing as the
+        # optimizer builder, so we can set the right LR on each (per-component) param group.
+        id_to_lr = {}
+        for name, p in effective_model.named_parameters():
+            if name.startswith("dinov3."):
+                id_to_lr[id(p)] = encoder_lr
+            elif name.startswith("token_inpaint."):
+                id_to_lr[id(p)] = token_lr
+            elif name.startswith("decoders."):
+                parts = name.split(".")
+                if len(parts) >= 2:
+                    id_to_lr[id(p)] = decoder_lrs.get(parts[1])
+
+        # Overwrite each param group's lr AND initial_lr (so freshly-built schedulers adopt
+        # the new value as base_lr; CosineAnnealingLR uses setdefault on initial_lr).
+        new_group_lrs = []
+        for group in self.optimizer.param_groups:
+            group_lrs = {id_to_lr[id(p)] for p in group["params"] if id(p) in id_to_lr}
+            group_lrs.discard(None)
+            if len(group_lrs) == 1:
+                lr = group_lrs.pop()
+            elif group_lrs:
+                lr = max(group_lrs)  # mixed group (unexpected) — pick the largest
+            else:
+                lr = group["lr"]  # unknown component — leave untouched
+            group["lr"] = lr
+            group["initial_lr"] = lr
+            new_group_lrs.append(lr)
+
+        # Rebuild schedulers from config: cosine base_lrs == the new LRs and the anneal
+        # restarts from the top over config.EPOCHS, discarding the restored scheduler states.
+        sched = initialize.schedulers(self.optimizer, config, self.training_dl)
+        self.LRscheduler = sched["LRscheduler"]
+        self.LRschedulerPlateau = sched["LRschedulerPlateau"]
+
+        self.logger.info(
+            "Re-applied config LRs on resume (REAPPLY_LRS_ON_RESUME=True): "
+            + ", ".join(f"{lr:.2e}" for lr in new_group_lrs)
+            + " — schedulers rebuilt from config.",
+            context="RESUME",
+        )
+        return True
+
     def resume_from_run(self, run_identifier: str) -> bool:
         """
         Resume training from an existing run.
@@ -1525,6 +1604,16 @@ class Engine:
                     )
         except Exception as e:
             self.logger.warning(f"Failed to load scheduler state(s): {e}")
+
+        # Optionally re-apply config LRs over the just-restored optimizer/scheduler state so
+        # YAML LR edits take effect on resume (opt-in via REAPPLY_LRS_ON_RESUME).
+        if self.config.get("REAPPLY_LRS_ON_RESUME", False):
+            try:
+                self._reapply_config_lrs_on_resume()
+            except Exception as e:
+                self.logger.warning(
+                    f"Failed to re-apply config LRs on resume: {e}", context="RESUME"
+                )
 
         # Restore early stopping state if available
         if (

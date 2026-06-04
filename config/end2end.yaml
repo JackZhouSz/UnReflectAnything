@@ -24,7 +24,7 @@ parameters:
           DROPOUT: 0.0  # Detail recovery: was 0.05. Drop decoder regularization so it can commit to sharp pixel-level detail.
           OUTPUT_IMAGE_SIZE: [896,896]  # Output image resolution [height, width]
           OUTPUT_CHANNELS: 3  # Number of output channels (3 for RGB diffuse image)
-          DECODER_LR: 0.00005 # NOTE: ignored on --resume-run (optimizer+cosine state is restored). Live diffuse LR continues from ~1.1e-5.
+          DECODER_LR: 0.0002 # Detail recovery: was 5e-5. Now honored on resume via REAPPLY_LRS_ON_RESUME — drives the (now fully-unfrozen) diffuse decoder for pixel detail.
           NUM_FUSION_BLOCKS_TRAINABLE: 4  # Detail recovery: was 1. Unfreeze ALL fusion blocks incl. high-res [0]/[1]/[2] (96/48/24px) that carry fine spatial detail.
           TRAIN_RGB_HEAD: True  # Whether to train RGB head (true/false, null = train if DECODER_LR != 0)
         highlight:
@@ -43,7 +43,7 @@ parameters:
         TOKEN_INPAINTER_CLASS: "TokenInpainter_Prior"  # Token inpainter class name
         TOKEN_INPAINTER_MODULE: "token_inpainters"  # Module name to import token inpainter from
         # FROM_PRETRAINED: "../DATA/results/logical-dawn-1096/models/full_model_weights.pt"  # Token inpainter weights from pretraining run logical-dawn-1096
-        TOKEN_INPAINTER_LR: 5.0e-4  # Learning rate for token inpainter (can differ from base LR)
+        TOKEN_INPAINTER_LR: 1.0e-4  # Lowered from 5e-4: inpainter color already converged (~1.1e-4 at crash); keep it gentle on resume so the detail push doesn't disturb the good color.
         DEPTH: 6  # Number of transformer blocks
         HEADS: 16 # Number of attention heads
         DROP: 0.00 # Dropout rate 
@@ -190,6 +190,9 @@ parameters:
         FACTOR: 0.1  # Factor by which LR is reduced (new_lr = old_lr * factor)
       COSINE:  # CosineAnnealingLR scheduler (cosine annealing schedule)
         N_PERIODS: 0.5  # Number of cosine periods over training
+
+  REAPPLY_LRS_ON_RESUME:
+    value: True  # On --resume-run, overwrite the restored optimizer/scheduler LRs with the per-module LRs above and restart the cosine anneal from them (without this, YAML LR edits are silently ignored on resume).
 
   OPTIMIZER_BOOTSTRAP_NAME:
     value: "AdamW"  # Optimizer name for initial training phase ("Adam", "SGD", etc.)

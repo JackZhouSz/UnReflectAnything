@@ -19,6 +19,7 @@
 #   6 +prior+sky                     iters=8  falloff=off  sky=T
 #   7 +prior+falloff                 iters=8  falloff=on   sky=F
 #   8 ALL                            iters=8  falloff=on   sky=T
+
 method: grid
 metric:
   goal: maximize

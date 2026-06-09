@@ -75,7 +75,7 @@ parameters:
   USE_TORCH_COMPILE:  # Enable PyTorch 2.0 torch.compile for faster training (experimental)
     value: False
   DISTRIBUTE:
-    value: "ddp"
+    value: "singlegpu "
 
   ### DATA                                                                      
   DATASETS:
